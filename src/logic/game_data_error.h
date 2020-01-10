@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 by the Widelands Development Team
+ * Copyright (C) 2009-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,27 +13,55 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_DATA_ERROR_H
-#define GAME_DATA_ERROR_H
+#ifndef WL_LOGIC_GAME_DATA_ERROR_H
+#define WL_LOGIC_GAME_DATA_ERROR_H
 
-#include "wexception.h"
+#include "base/wexception.h"
 
 namespace Widelands {
 
-/// Exceptiont that is thrown when game data (world/tribe definitions, maps,
+/// Exception that is thrown when game data (world/tribe definitions, maps,
 /// savegames or replays) are erroneous.
-struct game_data_error : public _wexception {
-	explicit game_data_error(char const * fmt, ...) PRINTF_FORMAT(2, 3);
+struct GameDataError : public WException {
+	explicit GameDataError(char const* fmt, ...) PRINTF_FORMAT(2, 3);
 
-	virtual char const * what() const throw () {return m_what.c_str();}
+	char const* what() const noexcept override {
+		return what_.c_str();
+	}
+
 protected:
-	game_data_error() {};
+	GameDataError() {
+	}
 };
 
-}
+/** This exception's message compiles information for the user when an old savegame could not be
+ * loaded due to packet version mismatch.
+ *
+ * The main message is localizeable, the technical information is not.
+ */
+struct UnhandledVersionError : public GameDataError {
 
-#endif
+	/** CTor
+	 *
+	 * @param packet_version         The version of the packet that Widelands is trying to load.
+	 * @param current_packet_version The packet version that Widelands is currently using.
+	 */
+	explicit UnhandledVersionError(const char* packet_name,
+	                               int32_t packet_version,
+	                               int32_t current_packet_version);
+
+	char const* what() const noexcept override {
+		return what_.c_str();
+	}
+
+protected:
+	UnhandledVersionError() {
+	}
+};
+}  // namespace Widelands
+
+#endif  // end of include guard: WL_LOGIC_GAME_DATA_ERROR_H

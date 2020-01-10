@@ -13,75 +13,91 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef SURFACE_H
-#define SURFACE_H
+#ifndef WL_GRAPHIC_SURFACE_H
+#define WL_GRAPHIC_SURFACE_H
 
-#include "compositemode.h"
-#include "rgbcolor.h"
-#include "rect.h"
-#include "surfaceptr.h"
-#include "wexception.h"
+#include <memory>
+#include <vector>
 
-/**
- * Interface to a basic surfaces that can be used as destination for drawing.
- */
-struct Surface {
-	Surface() {}
-	virtual ~Surface() {}
+#include "base/macros.h"
+#include "base/rect.h"
+#include "graphic/blend_mode.h"
+#include "graphic/color.h"
+#include "graphic/gl/draw_line_program.h"
+#include "graphic/image.h"
 
-	//@{
-	/// Get width and height
-	virtual uint32_t get_w() = 0;
-	virtual uint32_t get_h() = 0;
-	//@}
+class Texture;
 
-	/// Update the screen. This is only useful for the screen surface.
-	virtual void update() = 0;
-
-	/// Clears the complete surface to black.
-	virtual void clear() {
-		fill_rect
-			(Rect(Point(0, 0), get_w(), get_h()), RGBAColor(255, 255, 255, 255));
+// Interface to a basic surfaces that can be used as destination for blitting
+// and drawing. It also allows low level pixel access.
+class Surface {
+public:
+	Surface() = default;
+	virtual ~Surface() {
 	}
 
-	/// Draws a rect (frame only) to the surface.
-	virtual void draw_rect(Rect, RGBColor) = 0;
+	/// Dimensions.
+	virtual int width() const = 0;
+	virtual int height() const = 0;
 
-	/// Draws a filled rect to the surface.
-	virtual void fill_rect(Rect, RGBAColor) = 0;
+	/// This draws a part of 'texture'.
+	void blit(const Rectf& dst,
+	          const Image&,
+	          const Rectf& srcrc,
+	          const float opacity,
+	          BlendMode blend_mode);
 
-	/// draw a line to the surface
-	virtual void draw_line
-		(int32_t x1,
-		 int32_t y1,
-		 int32_t x2,
-		 int32_t y2,
-		 RGBColor color,
-		 Rect const * clip = 0)
-	{
-		throw wexception("draw_line() not implemented");
-	}
+	/// This draws a playercolor blended image.
+	void blit_blended(const Rectf& dst,
+	                  const Image& image,
+	                  const Image& texture_mask,
+	                  const Rectf& srcrc,
+	                  const RGBColor& blend);
 
-	/// makes a rectangle on the surface brighter (or darker).
-	/// @note this is slow in SDL mode. Use with care
-	virtual void brighten_rect(Rect, int32_t factor) = 0;
+	/// This draws a grayed out version.
+	void
+	blit_monochrome(const Rectf& dst, const Image&, const Rectf& srcrc, const RGBAColor& multiplier);
 
-	/// This draws a part aother surface to this surface
-	virtual void blit(Point, PictureID, Rect srcrc, Composite cm = CM_Normal) = 0;
-	/// This draws another surface completely in the left
-	/// upper corner of this surface
-	virtual void fast_blit(PictureID surface) = 0;
+	/// Draws a filled rect to the destination.
+	void fill_rect(const Rectf& dst, const RGBAColor&, BlendMode blend_mode = BlendMode::Copy);
 
-	virtual IPixelAccess & pixelaccess() = 0;
+	// Draw a 'width' pixel wide line to the destination. 'points' are taken by
+	// value on purpose.
+	void draw_line_strip(std::vector<Vector2f> points, const RGBColor& color, float width);
+
+	/// makes a rectangle on the destination brighter (or darker).
+	void brighten_rect(const Rectf&, int factor);
 
 private:
-	// surfaces cannot be copied
-	Surface(const Surface &);
-	Surface & operator= (Surface const &);
+	/// The actual implementation of the methods below.
+	virtual void
+	do_blit(const Rectf& dst_rect, const BlitData& texture, float opacity, BlendMode blend_mode) = 0;
+
+	virtual void do_blit_blended(const Rectf& dst_rect,
+	                             const BlitData& texture,
+	                             const BlitData& mask,
+	                             const RGBColor& blend) = 0;
+
+	virtual void
+	do_blit_monochrome(const Rectf& dst_rect, const BlitData& texture, const RGBAColor& blend) = 0;
+
+	// Takes argument by value for micro optimization: the argument might then
+	// be moved by the compiler instead of copied.
+	virtual void do_draw_line_strip(std::vector<DrawLineProgram::PerVertexData> vertices) = 0;
+
+	virtual void
+	do_fill_rect(const Rectf& dst_rect, const RGBAColor& color, BlendMode blend_mode) = 0;
+
+	DISALLOW_COPY_AND_ASSIGN(Surface);
 };
 
-#endif
+/// Draws a rect (frame only) to the surface. The width of the surrounding line
+/// is 1 pixel, i.e. the transparent inner box of the drawn rectangle starts at
+/// (x+1, y+1) and has dimension (w - 2, h - 2).
+void draw_rect(const Rectf& rect, const RGBColor&, Surface* destination);
+
+#endif  // end of include guard: WL_GRAPHIC_SURFACE_H

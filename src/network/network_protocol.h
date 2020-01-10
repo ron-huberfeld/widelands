@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2010 by the Widelands Development Team
+ * Copyright (C) 2008-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,12 +13,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef NETWORK_PROTOCOL_H
-#define NETWORK_PROTOCOL_H
+#ifndef WL_NETWORK_NETWORK_PROTOCOL_H
+#define WL_NETWORK_NETWORK_PROTOCOL_H
 
 /// How many bytes will (maximal) be send as file part
 #define NETFILEPARTSIZE 511
@@ -28,7 +28,7 @@ enum {
 	 * The current version of the in-game network protocol. Client and host
 	 * protocol versions must match.
 	 */
-	NETWORK_PROTOCOL_VERSION = 18,
+	NETWORK_PROTOCOL_VERSION = 23,
 
 	/**
 	 * The default interval (in milliseconds) in which the host issues
@@ -56,7 +56,6 @@ enum {
 	SERVER_TIMESTAMP_INTERVAL = 100,
 };
 
-
 /**
  * These are the command codes used in the in-game network protocol.
  *
@@ -77,14 +76,14 @@ enum {
 	 *
 	 * The first communication across the network stream is a HELLO command
 	 * sent by the client, with the following payload:
-	 * \li Unsigned8: protocol version
-	 * \li String: player name
-	 * \li String: build_id of the client
+	 * \li unsigned_8: protocol version
+	 * \li string:     player name
+	 * \li string:     build_id of the client
 	 *
 	 * If the host accepts, it replies with a HELLO command with the following
 	 * payload:
-	 * \li Unsigned8: protocol version
-	 * \li Unsigned32: 0-based user number for the client
+	 * \li unsigned_8:  protocol version
+	 * \li unsigned_32: 0-based user number for the client
 	 *
 	 * \note The host may override the client's chosen name in a subsequent
 	 * \ref NETCMD_SETTING_ALLPLAYERS or \ref NETCMD_SETTING_PLAYER packet.
@@ -96,7 +95,7 @@ enum {
 	/**
 	 * Bidirectional command: Game time update. This command has the following
 	 * payload:
-	 * \li Signed32: game time
+	 * \li signed_32: game time
 	 *
 	 * If sent by the host, this command advises the client that it may
 	 * simulate the game up to the given game time. The host guarantees that
@@ -109,7 +108,7 @@ enum {
 
 	/**
 	 * Bidirectional command: Player command. This command has the payload:
-	 * \li Signed32: game time
+	 * \li signed_32: game time
 	 * \li serialized \ref Widelands::PlayerCommand
 	 *
 	 * If sent by the host, the client must enqueue the given \ref PlayerCommand
@@ -124,7 +123,7 @@ enum {
 	 * command.
 	 *
 	 * \note The client must never enqueue a \ref PlayerCommand that it issued
-	 * itself. It must not assume that the host will accept a \ref PlaerCommand
+	 * itself. It must not assume that the host will accept a \ref PlayerCommand
 	 * that it sends. Instead, it must rely on the host echoing back the command.
 	 *
 	 */
@@ -133,7 +132,9 @@ enum {
 	/**
 	 * Bidirectional command: Terminate the connection with a given reason.
 	 * Payload is:
-	 * \li String: reason for disconnect
+	 * \li unsigned_8: number of attached strings
+	 * \li string:     reason for disconnect
+	 * \li string:     ...
 	 *
 	 * Both host and client can send this command, followed by immediately
 	 * closing the connection. The receiver of this command should just close
@@ -150,10 +151,11 @@ enum {
 	NETCMD_DISCONNECT = 4,
 
 	/**
-	 * During game setup, this command is sent by the host to advise clients
-	 * of a map change. Payload is:
-	 * \li String: human readable mapname
-	 * \li String: map filename
+	 * During game setup, this command is sent by the host to advise clients of a map change.
+	 *
+	 * Payload is:
+	 * \li string: human readable mapname
+	 * \li string: map filename
 	 * \li bool:   is_savegame
 	 * \li bool:   is_scenario
 	 */
@@ -163,7 +165,7 @@ enum {
 	 * During game setup, this command is sent by the host to inform clients
 	 * about the names of the tribes they may choose.
 	 *
-	 * \see NetClient::handle_network
+	 * \see GameClient::handle_network
 	 */
 	NETCMD_SETTING_TRIBES = 6,
 
@@ -171,7 +173,7 @@ enum {
 	 * During game setup, this command contains complete information about all
 	 * player slots (independent of their state).
 	 *
-	 * \see NetClient::handle_network
+	 * \see GameClient::handle_network
 	 */
 	NETCMD_SETTING_ALLPLAYERS = 7,
 
@@ -179,7 +181,10 @@ enum {
 	 * During game setup, this command updates the information associated to
 	 * one player slot.
 	 *
-	 * \see NetClient::handle_network
+	 * Payload in that case is:
+	 * \li unsigned_8: number of the player
+	 *
+	 * \see GameClient::handle_network
 	 */
 	NETCMD_SETTING_PLAYER = 8,
 
@@ -187,7 +192,7 @@ enum {
 	 * During game setup, this command contains complete information about all
 	 * users.
 	 *
-	 * \see NetClient::handle_network
+	 * \see GameClient::handle_network
 	 */
 	NETCMD_SETTING_ALLUSERS = 9,
 
@@ -195,7 +200,7 @@ enum {
 	 * During game setup, this command updates the information associated to
 	 * one user.
 	 *
-	 * \see NetClient::handle_network
+	 * \see GameClient::handle_network
 	 */
 	NETCMD_SETTING_USER = 10,
 
@@ -217,7 +222,7 @@ enum {
 	/**
 	 * Sent by both the host and the client to indicate speed change.
 	 * The payload is:
-	 * \li Unsigned16 game speed in milliseconds per second
+	 * \li unsigned_16 game speed in milliseconds per second
 	 *
 	 * If sent by the host, this command advises the client of how fast
 	 * it should simulate the game to avoid a choppy "stop-and-go"
@@ -244,7 +249,7 @@ enum {
 
 	/**
 	 * Sent by the host to request an MD5 synchronization hash. Payload is:
-	 * \li Signed32: game time at which the hash must be taken
+	 * \li signed_32: game time at which the hash must be taken
 	 *
 	 * The client must reply with a \ref NETCMD_SYNCREPORT command as soon
 	 * as the given game time has been reached on the client.
@@ -261,7 +266,9 @@ enum {
 	/**
 	 * During game setup, this is sent by the client to request a change
 	 * to a different tribe. Payload is
-	 * \li String: name of tribe
+	 * \li unsigned_8: player number
+	 * \li string:     name of tribe
+	 * \li bool:       random_tribe
 	 *
 	 * The client must not assume that the host will accept this request.
 	 * The host may or may not send a \ref NETCMD_SETTING_ALLPLAYERS or
@@ -273,7 +280,7 @@ enum {
 	/**
 	 * During game setup, this is sent by the client to request a change
 	 * to a different starting position. Payload is
-	 * \li Unsigned8: number of the starting point
+	 * \li unsigned_8: number of the starting point
 	 *
 	 * The client must not assume that the host will accept this request.
 	 * The host may or may not send a \ref NETCMD_SETTING_ALLPLAYERS or
@@ -286,15 +293,15 @@ enum {
 	 * During game setup, this is sent by the host to a specific player.
 	 * It is the answer on NETCMD_SETTING_CHANGETRIBE, if the player
 	 * starting position was successfully changed. Payload is
-	 * \li Signed32: new playernumber
+	 * \li signed_32: new playernumber
 	 */
 	NETCMD_SET_PLAYERNUMBER = 19,
 
 	/**
 	 * Sent by the client to reply to a \ref NETCMD_SYNCREQUEST command,
 	 * with the following payload:
-	 * \li Signed32: game time at which the hash was taken
-	 * \li 16 bytes: MD5 hash
+	 * \li signed_32: game time at which the hash was taken
+	 * \li 16 bytes:  MD5 hash
 	 *
 	 * It is solely the host's responsibility to act when desyncs are
 	 * detected.
@@ -306,16 +313,16 @@ enum {
 	 * different payloads.
 	 *
 	 * The client sends this message to the host with the following payload:
-	 * \li String: the message
+	 * \li string: the message
 	 * The host will echo the message if the client is allowed to send
 	 * chat messages.
 	 *
 	 * The host sends this message with the following payload:
-	 * \li Signed16: playernumber - only used for colorization of messages.
-	 * \li String: sender (may be empty to indicate system messages)
-	 * \li String: the message
-	 * \li Unsigned8: whether this is a personal message (0 / 1)
-	 * \li String: the recipient (only filled as personal message)
+	 * \li signed_16:  playernumber - only used for colorization of messages.
+	 * \li string:     sender (may be empty to indicate system messages)
+	 * \li string:     the message
+	 * \li unsigned_8: whether this is a personal message (0 / 1)
+	 * \li string:     the recipient (only filled as personal message)
 	 */
 	NETCMD_CHAT = 21,
 
@@ -334,9 +341,9 @@ enum {
 	 * Sent by the host to tell a client that a file transfer will start soon.
 	 *
 	 * The host sends all needed data to prepare for the file transfer:
-	 * \li String: filename (path relative to standard path of filetype)
-	 * \li Unsigned32: how many bytes will be send?
-	 * \li String: md5sum
+	 * \li string:      filename (path relative to standard path of filetype)
+	 * \li unsigned_32: how many bytes will be send?
+	 * \li string:      md5sum
 	 *
 	 * Sent by the client as answer on the same message of the host as request.
 	 */
@@ -346,36 +353,93 @@ enum {
 	 * Sent by the host to transfer a part of the file.
 	 *
 	 * Attached data is:
-	 * \li Unsigned32: part number
-	 * \li Unsigned32: length of data (needed because last part might be shorter)
+	 * \li unsigned_32: part number
+	 * \li unsigned_32: length of data (needed because last part might be shorter)
 	 * \li void[length of data]: data
 	 *
 	 * Sent by the client to request the next part from the host.
-	 * \li Unsigned32: number of the last received part
-	 * \li String: md5sum - to ensure client and host are talking about the same
+	 * \li unsigned_32: number of the last received part
+	 * \li string:      md5sum - to ensure client and host are talking about the same
 	 */
 	NETCMD_FILE_PART = 24,
 
 	/**
-	* Sent by the host to change the win condition.
-	*
-	* Attached data is:
-	* \li String: name of the win condition
-	*/
+	 * Sent by the host to change the win condition.
+	 *
+	 * Attached data is:
+	 * \li string: name of the win condition
+	 *
+	 * If sent by the client, no data is attached, as it is only a request to toggle
+	 */
 	NETCMD_WIN_CONDITION = 25,
 
 	/**
 	 * During game setup, this is sent by the client to indicate that the
-	 * client wants to change its team number.
+	 * client wants to change a team number.
 	 *
-	 * \li Unsigned8: new desired team number
+	 * \li unsigned_8: number of the player
+	 * \li unsigned_8: new desired team number
 	 *
 	 * \note The client must not assume that the host will accept this
 	 * request. Change of team number only becomes effective when/if the host
 	 * replies with a \ref NETCMD_SETTING_PLAYER or
 	 *  \ref NETCMD_SETTING_ALLPLAYERS indicating the changed team.
 	 */
-	NETCMD_SETTING_CHANGETEAM = 26
+	NETCMD_SETTING_CHANGETEAM = 26,
+
+	/**
+	 * During game setup, this is sent by the client to indicate that the
+	 * client wants to change a shared player.
+	 *
+	 * \li unsigned_8: number of the player
+	 * \li unsigned_8: new shared player
+	 *
+	 * \note The client must not assume that the host will accept this
+	 * request. Change of the initialization only becomes effective when/if the host
+	 * replies with a \ref NETCMD_SETTING_PLAYER or
+	 *  \ref NETCMD_SETTING_ALLPLAYERS indicating the changed initialization.
+	 */
+	NETCMD_SETTING_CHANGESHARED = 27,
+
+	/**
+	 * During game setup, this is sent by the client to indicate that the
+	 * client wants to change a player's initialisation.
+	 *
+	 * \li unsigned_8: number of the player
+	 * \li unsigned_8: index of the initialization
+	 *
+	 * \note The client must not assume that the host will accept this
+	 * request. Change of team number only becomes effective when/if the host
+	 * replies with a \ref NETCMD_SETTING_PLAYER or
+	 *  \ref NETCMD_SETTING_ALLPLAYERS indicating the changed team.
+	 */
+	NETCMD_SETTING_CHANGEINIT = 28,
+
+	// 29 - 31 were commands related to dedicated server. Do not use.
+
+	/**
+	 * This is sent by the server to generate a clientsided translated system
+	 * chat message. Payload is:
+	 *
+	 * \li string:    Message code \see NetworkGamingMessages::fill_map()
+	 * \li string:    First attached string
+	 * \li string:    Second attached string
+	 * \li string:    Third attached string
+	 */
+	NETCMD_SYSTEM_MESSAGE_CODE = 32,
+
+	/**
+	 * Sent by the host to toggle peaceful mode.
+	 *
+	 * Attached data is:
+	 * \li uint8_t: 1 if peaceful mode is enabled, 0 otherwise
+	 */
+	NETCMD_PEACEFUL_MODE = 33,
+
+	/**
+	 * Sent by the metaserver to a freshly opened game to check connectability
+	 */
+	NETCMD_METASERVER_PING = 64
 };
 
-#endif
+#endif  // end of include guard: WL_NETWORK_NETWORK_PROTOCOL_H

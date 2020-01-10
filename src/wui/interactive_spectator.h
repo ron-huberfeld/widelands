@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2003, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,19 +13,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef INTERACTIVE_SPECTATOR_H
-#define INTERACTIVE_SPECTATOR_H
+#ifndef WL_WUI_INTERACTIVE_SPECTATOR_H
+#define WL_WUI_INTERACTIVE_SPECTATOR_H
 
-#include "ui_basic/button.h"
-
-#include "interactive_gamebase.h"
 #include <SDL_keyboard.h>
 
-namespace Widelands {struct Game;}
+#include "io/profile.h"
+#include "ui_basic/button.h"
+#include "wui/interactive_gamebase.h"
+
+namespace Widelands {
+class Game;
+}
 
 /**
  * This class shows a game for somebody who is only a spectator.
@@ -34,41 +37,26 @@ namespace Widelands {struct Game;}
  *
  * This class provides the UI, runs the game logic, etc.
  */
-struct Interactive_Spectator : public Interactive_GameBase {
-	Interactive_Spectator
-		(Widelands::Game &, Section & global_s, bool multiplayer = false);
+struct InteractiveSpectator : public InteractiveGameBase {
+	InteractiveSpectator(Widelands::Game&,
+	                     Section& global_s,
+	                     bool multiplayer = false,
+	                     ChatProvider* chat_provider = nullptr);
 
-	~Interactive_Spectator();
+	Widelands::Player* get_player() const override;
 
-	void start();
-
-	Widelands::Player * get_player() const throw ();
-
-	bool handle_key(bool down, SDL_keysym);
+	bool handle_key(bool down, SDL_Keysym) override;
+	void draw(RenderTarget& dst) override;
+	void draw_map_view(MapView* given_map_view, RenderTarget* dst) override;
 
 private:
-	void toggle_chat();
-	void toggle_options_menu();
-	void toggle_statistics();
+	bool player_hears_field(const Widelands::Coords& coords) const override;
+
 	void exit_btn();
-	void save_btn();
-	virtual bool can_see(Widelands::Player_Number) const;
-	virtual bool can_act(Widelands::Player_Number) const;
-	virtual Widelands::Player_Number player_number() const;
-	virtual void node_action();
-
-private:
-	UI::Callback_Button m_toggle_chat;
-	UI::Callback_Button m_exit;
-	UI::Callback_Button m_save;
-	UI::Callback_Button m_toggle_options_menu;
-	UI::Callback_Button m_toggle_statistics;
-	UI::Callback_Button m_toggle_minimap;
-
-
-	UI::UniqueWindow::Registry m_chat;
-	UI::UniqueWindow::Registry m_options;
+	bool can_see(Widelands::PlayerNumber) const override;
+	bool can_act(Widelands::PlayerNumber) const override;
+	Widelands::PlayerNumber player_number() const override;
+	void node_action(const Widelands::NodeAndTriangle<>& node_and_triangle) override;
 };
 
-
-#endif
+#endif  // end of include guard: WL_WUI_INTERACTIVE_SPECTATOR_H

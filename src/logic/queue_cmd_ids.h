@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2008, 2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,12 +13,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef QUEUE_CMD_IDS_H
-#define QUEUE_CMD_IDS_H
+#ifndef WL_LOGIC_QUEUE_CMD_IDS_H
+#define WL_LOGIC_QUEUE_CMD_IDS_H
 
 /*
  * This file contains the ids for the different
@@ -31,48 +31,81 @@
  * writing to files
  */
 
-/* ID zero is reserved and must never be used */
-#define QUEUE_CMD_NONE                   0
+namespace Widelands {
 
-/* PLAYER COMMANDS BELOW */
-#define QUEUE_CMD_BUILD                  1
-#define QUEUE_CMD_FLAG                   2
-#define QUEUE_CMD_BUILDROAD              3
-#define QUEUE_CMD_FLAGACTION             4
-#define QUEUE_CMD_STOPBUILDING           5
-#define QUEUE_CMD_ENHANCEBUILDING        6
-#define QUEUE_CMD_BULLDOZE               7
-#define QUEUE_CMD_CHANGETRAININGOPTIONS  8
-#define QUEUE_CMD_DROPSOLDIER            9
-#define QUEUE_CMD_CHANGESOLDIERCAPACITY 10
-#define QUEUE_CMD_ENEMYFLAGACTION       11
-#define QUEUE_CMD_SETWAREPRIORITY       12
-#define QUEUE_CMD_SETWARETARGETQUANTITY     13
-#define QUEUE_CMD_RESETWARETARGETQUANTITY   14
-#define QUEUE_CMD_SETWORKERTARGETQUANTITY   15
-#define QUEUE_CMD_RESETWORKERTARGETQUANTITY 16
+// The command types are used by the QueueCmdFactory, for network serialization
+// and for savegame compatibility.
+// DO NOT change the order
+// TODO(GunChleoc): Whenever we break savegame compatibility, clean this up and change data type to
+// uint16_t.
+enum class QueueCommandTypes : uint8_t {
 
-#define QUEUE_CMD_CHANGEMILITARYCONFIG  17
+	/* ID zero is reserved and must never be used */
+	kNone = 0,
 
-#define QUEUE_CMD_MESSAGESETSTATUSREAD       21
-#define QUEUE_CMD_MESSAGESETSTATUSARCHIVED   22
+	/* PLAYER COMMANDS BELOW */
+	kBuild,
+	kBuildFlag,
+	kBuildRoad,
+	kFlagAction,
+	kStartStopBuilding,
+	kEnhanceBuilding,
+	kBulldoze,
 
-#define QUEUE_CMD_SETSTOCKPOLICY        23
+	kChangeTrainingOptions,
+	kDropSoldier,
+	kChangeSoldierCapacity,
+	kEnemyFlagAction,
 
-#define QUEUE_CMD_DESTROY_MAPOBJECT    127
-#define QUEUE_CMD_ACT                  128
-// 129 was a command related to old events. removed
-#define QUEUE_CMD_INCORPORATE          130
-#define QUEUE_CMD_LUASCRIPT            131
-#define QUEUE_CMD_LUACOROUTINE         132
-#define QUEUE_CMD_CALCULATE_STATISTICS 133
+	kSetWarePriority,
+	kSetWareTargetQuantity,
+	kResetWareTargetQuantity,
+	kSetWorkerTargetQuantity,
+	kResetWorkerTargetQuantity,  // 16
 
-#define QUEUE_CMD_CALL_ECONOMY_BALANCE 200
-#define QUEUE_CMD_EXPIREMESSAGE             201
+	// 17 was a command related to old events. removed
 
-#define QUEUE_CMD_NETCHECKSYNC         250
-#define QUEUE_CMD_REPLAYSYNCWRITE      251
-#define QUEUE_CMD_REPLAYSYNCREAD       252
-#define QUEUE_CMD_REPLAYEND            253
+	kSetInputMaxFill = 18,
 
-#endif
+	kMessageSetStatusRead = 21,
+	kMessageSetStatusArchived,
+
+	kSetStockPolicy,
+	kDismantleBuilding,
+
+	kEvictWorker,
+
+	kMilitarysiteSetSoldierPreference,
+	kProposeTrade,
+	kBuildWaterway,  // 28
+
+	kShipSink = 121,
+	kShipCancelExpedition,
+	kStartOrCancelExpedition,
+	kShipConstructPort,
+	kShipScoutDirection,
+	kShipExploreIsland,
+
+	// The commands below are never serialized, but we still keep the IDs stable for savegame
+	// compatibility.
+
+	kDestroyMapObject,
+	kAct,  // 128
+	// 129 was a command related to old events. removed
+	kIncorporate = 130,
+	kLuaScript,
+	kLuaCoroutine,
+	kCalculateStatistics,  // 133
+	kCallEconomyBalance = 200,
+
+	kDeleteMessage,  // 201
+
+	kNetCheckSync = 250,
+	kReplaySyncWrite,
+	kReplaySyncRead,
+	kReplayEnd  // 253
+};
+
+}  // namespace Widelands
+
+#endif  // end of include guard: WL_LOGIC_QUEUE_CMD_IDS_H

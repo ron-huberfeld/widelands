@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,24 +13,25 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef MULTIPLAYERSETUPGROUP_H
-#define MULTIPLAYERSETUPGROUP_H
+#ifndef WL_WUI_MULTIPLAYERSETUPGROUP_H
+#define WL_WUI_MULTIPLAYERSETUPGROUP_H
 
-#include "constants.h"
+#include <map>
+#include <memory>
+#include <string>
+
+#include "graphic/font_handler.h"
+#include "graphic/text/font_set.h"
+#include "network/network_player_settings_backend.h"
 #include "ui_basic/box.h"
 #include "ui_basic/panel.h"
 #include "ui_basic/textarea.h"
 
-#include <string>
-
-#define MAXCLIENTS 64
-
 struct GameSettingsProvider;
-struct MultiPlayerSetupGroupOptions;
 struct MultiPlayerClientGroup;
 struct MultiPlayerPlayerGroup;
 
@@ -41,31 +42,32 @@ struct MultiPlayerPlayerGroup;
  * clients, computers and closed players.
  *
  */
-struct MultiPlayerSetupGroup : public UI::Panel {
-	MultiPlayerSetupGroup
-		(UI::Panel * parent,
-		 int32_t x, int32_t y, int32_t w, int32_t h,
-		 GameSettingsProvider * settings,
-		 uint32_t butw, uint32_t buth,
-		 std::string const & fname = UI_FONT_NAME,
-		 uint32_t fsize = UI_FONT_SIZE_SMALL);
-	~MultiPlayerSetupGroup();
-
-	void refresh();
+struct MultiPlayerSetupGroup : public UI::Box {
+	MultiPlayerSetupGroup(UI::Panel* parent,
+	                      int32_t x,
+	                      int32_t y,
+	                      int32_t w,
+	                      int32_t h,
+	                      GameSettingsProvider* settings,
+	                      uint32_t buth);
+	~MultiPlayerSetupGroup() override;
 
 private:
-	GameSettingsProvider   * const s;
-	std::vector<MultiPlayerClientGroup *> c;
-	std::vector<MultiPlayerPlayerGroup *> p;
-	UI::Box                  clientbox, playerbox;
-	std::vector<UI::Textarea *> labels;
+	void update();
+	void draw(RenderTarget& dst) override;
 
-	uint32_t    m_buth, m_fsize;
-	std::string m_fname;
+	GameSettingsProvider* const settings_;
+	std::unique_ptr<NetworkPlayerSettingsBackend> npsb;
+	std::vector<MultiPlayerClientGroup*> multi_player_client_groups;  // not owned
+	std::vector<MultiPlayerPlayerGroup*> multi_player_player_groups;  // not owned
+	std::unique_ptr<Notifications::Subscriber<NoteGameSettings>> subscriber_;
 
-	std::map<std::string, PictureID> m_tribepics;
-	std::map<std::string, std::string> m_tribenames;
+	UI::Box clientbox, playerbox;
+
+	uint32_t buth_;
+
+	std::map<std::string, const Image*> tribepics_;
+	std::map<std::string, std::string> tribenames_;
 };
 
-
-#endif
+#endif  // end of include guard: WL_WUI_MULTIPLAYERSETUPGROUP_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,40 +13,42 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FACTORY_H
-#define FACTORY_H
-
-#include <lua.hpp>
+#ifndef WL_SCRIPTING_FACTORY_H
+#define WL_SCRIPTING_FACTORY_H
 
 #include "logic/widelands.h"
+#include "scripting/lua.h"
 
 /*
  * Class to create the correct type for types shared between Editor and Game.
  */
 class Factory {
 public:
-	virtual void push_player(lua_State * L, Widelands::Player_Number) = 0;
-	virtual ~Factory() {}
-
+	virtual void push_player(lua_State* L, Widelands::PlayerNumber) = 0;
+	virtual ~Factory() {
+	}
 };
 
 class GameFactory : public Factory {
 public:
-	virtual ~GameFactory() {}
+	~GameFactory() override {
+	}
 
-	virtual void push_player(lua_State * L, Widelands::Player_Number plr);
+	void push_player(lua_State* L, Widelands::PlayerNumber plr) override;
 };
 
-class EditorFactory  : public Factory {
+class EditorFactory : public Factory {
 public:
-	virtual ~EditorFactory() {}
+	~EditorFactory() override {
+	}
 
-	virtual void push_player(lua_State * L, Widelands::Player_Number plr);
+	void push_player(lua_State* L, Widelands::PlayerNumber plr) override;
 };
 
-#endif /* end of include guard: FACTORY_H */
+Factory& get_factory(lua_State* const L);
 
+#endif  // end of include guard: WL_SCRIPTING_FACTORY_H

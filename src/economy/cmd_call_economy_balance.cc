@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,93 +13,90 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "cmd_call_economy_balance.h"
+#include "economy/cmd_call_economy_balance.h"
 
-#include "economy.h"
+#include "base/wexception.h"
+#include "economy/economy.h"
+#include "io/fileread.h"
+#include "io/filewrite.h"
 #include "logic/game.h"
-#include "map_io/widelands_map_map_object_loader.h"
-#include "map_io/widelands_map_map_object_saver.h"
 #include "logic/player.h"
-#include "wexception.h"
+#include "map_io/map_object_loader.h"
+#include "map_io/map_object_saver.h"
 
 namespace Widelands {
 
-Cmd_Call_Economy_Balance::Cmd_Call_Economy_Balance
-	(int32_t const starttime, Economy * const economy, uint32_t const timerid)
-	: GameLogicCommand(starttime)
-{
-	m_flag = &economy->get_arbitrary_flag();
-	m_timerid = timerid;
+CmdCallEconomyBalance::CmdCallEconomyBalance(uint32_t const starttime,
+                                             Economy* const economy,
+                                             uint32_t const timerid)
+   : GameLogicCommand(starttime) {
+	Flag* flag = economy->get_arbitrary_flag();
+	flag_ = flag;
+	timerid_ = timerid;
+	type_ = economy->type();
+	assert(flag->get_economy(type_) == economy);
 }
 
 /**
  * Called by Cmd_Queue as requested by start_request_timer().
  * Call economy functions to balance supply and request.
  */
-void Cmd_Call_Economy_Balance::execute(Game & game)
-{
-	if (Flag * const flag = m_flag.get(game))
-		flag->get_economy()->balance(m_timerid);
+void CmdCallEconomyBalance::execute(Game& game) {
+	if (Flag* const flag = flag_.get(game))
+		flag->get_economy(type_)->balance(timerid_);
 }
 
-#define CURRENT_CMD_CALL_ECONOMY_VERSION 3
+constexpr uint16_t kCurrentPacketVersion = 4;
 
 /**
  * Read and write
  */
-void Cmd_Call_Economy_Balance::Read
-	(FileRead & fr, Editor_Game_Base & egbase, Map_Map_Object_Loader & mol)
-{
+void CmdCallEconomyBalance::read(FileRead& fr, EditorGameBase& egbase, MapObjectLoader& mol) {
 	try {
-		uint16_t const packet_version = fr.Unsigned16();
-		if (packet_version == CURRENT_CMD_CALL_ECONOMY_VERSION) {
-			GameLogicCommand::Read(fr, egbase, mol);
-			uint32_t serial = fr.Unsigned32();
-			if (serial)
-				m_flag = &mol.get<Flag>(serial);
-			m_timerid = fr.Unsigned32();
-		} else if (packet_version == 1 || packet_version == 2) {
-			GameLogicCommand::Read(fr, egbase, mol);
-			uint8_t const player_number = fr.Unsigned8();
-			if (Player * const player = egbase.get_player(player_number)) {
-				if (not fr.Unsigned8())
-					throw wexception("0 is not allowed here");
-				uint16_t const economy_number = fr.Unsigned16();
-				if (economy_number < player->get_nr_economies())
-					m_flag =
-						&player->get_economy_by_number(economy_number)
-						->get_arbitrary_flag();
-				else
-					throw wexception("invalid economy number %u", economy_number);
-			} else
-				throw wexception("invalid player number %u", player_number);
-			if (packet_version >= 2)
-				m_timerid = fr.Unsigned32();
-			else
-				m_timerid = 0;
-		} else
-			throw game_data_error
-				(_("unknown/unhandled version %u"), packet_version);
-	} catch (_wexception const & e) {
-		throw wexception(_("call economy balance: %s"), e.what());
+		uint16_t const packet_version = fr.unsigned_16();
+		if (packet_version <= kCurrentPacketVersion && packet_version >= 3) {
+			GameLogicCommand::read(fr, egbase, mol);
+			uint32_t serial = fr.unsigned_32();
+			if (serial) {
+				flag_ = &mol.get<Flag>(serial);
+			}
+			timerid_ = fr.unsigned_32();
+			if (packet_version >= 4) {
+				type_ = fr.unsigned_8() ? wwWORKER : wwWARE;
+			} else {
+				// TODO(Nordfriese): Savegame compatibility
+				type_ = wwWARE;
+				if (serial) {
+					if (upcast(Game, game, &egbase)) {
+						Economy* e = flag_.get(egbase)->get_economy(wwWORKER);
+						assert(e);
+						game->cmdqueue().enqueue(
+						   new CmdCallEconomyBalance(duetime(), e, e->request_timerid_));
+					}
+				}
+			}
+		} else {
+			throw UnhandledVersionError(
+			   "CmdCallEconomyBalance", packet_version, kCurrentPacketVersion);
+		}
+	} catch (const WException& e) {
+		throw wexception("call economy balance: %s", e.what());
 	}
 }
-void Cmd_Call_Economy_Balance::Write
-	(FileWrite & fw, Editor_Game_Base & egbase, Map_Map_Object_Saver & mos)
-{
-	fw.Unsigned16(CURRENT_CMD_CALL_ECONOMY_VERSION);
+void CmdCallEconomyBalance::write(FileWrite& fw, EditorGameBase& egbase, MapObjectSaver& mos) {
+	fw.unsigned_16(kCurrentPacketVersion);
 
 	// Write Base Commands
-	GameLogicCommand::Write(fw, egbase, mos);
-	if (Flag * const flag = m_flag.get(egbase))
-		fw.Unsigned32(mos.get_object_file_index(*flag));
+	GameLogicCommand::write(fw, egbase, mos);
+	if (Flag* const flag = flag_.get(egbase))
+		fw.unsigned_32(mos.get_object_file_index(*flag));
 	else
-		fw.Unsigned32(0);
-	fw.Unsigned32(m_timerid);
+		fw.unsigned_32(0);
+	fw.unsigned_32(timerid_);
+	fw.unsigned_8(type_);
 }
-
-}
+}  // namespace Widelands

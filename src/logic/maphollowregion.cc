@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007-2008 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,77 +13,77 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "maphollowregion.h"
+#include "logic/maphollowregion.h"
 
 namespace Widelands {
 
-template <> MapHollowRegion<Area<> >::MapHollowRegion
-	(Map const & map, HollowArea<Area<> > const hollow_area)
-:
-m_hollow_area (hollow_area),
-m_phase       (Top),
-m_delta_radius(hollow_area.radius - hollow_area.hole_radius),
-m_row         (0),
-m_rowwidth    (hollow_area.radius + 1),
-m_rowpos      (0),
-m_left        (hollow_area)
-{
+template <>
+MapHollowRegion<Area<>>::MapHollowRegion(const Map& map, const HollowArea<Area<>>& hollow_area)
+   : hollow_area_(hollow_area),
+     phase_(Phase::kTop),
+     delta_radius_(hollow_area.radius - hollow_area.hole_radius),
+     row_(0),
+     rowwidth_(hollow_area.radius + 1),
+     rowpos_(0),
+     left_(hollow_area) {
 	assert(hollow_area.hole_radius < hollow_area.radius);
 	for (uint16_t r = hollow_area.radius; r; --r)
-		map.get_tln(m_hollow_area, &m_hollow_area);
-	m_left = m_hollow_area;
+		map.get_tln(hollow_area_, &hollow_area_);
+	left_ = hollow_area_;
 }
 
-template <> bool MapHollowRegion<Area<> >::advance(const Map & map) throw () {
-	if (m_phase == None)
+template <> bool MapHollowRegion<Area<>>::advance(const Map& map) {
+	if (phase_ == Phase::kNone) {
 		return false;
-	++m_rowpos;
-	if (m_rowpos < m_rowwidth) {
-		map.get_rn(m_hollow_area, &m_hollow_area);
-		if ((m_phase & (Upper|Lower)) and m_rowpos == m_delta_radius) {
+	}
+	++rowpos_;
+	if (rowpos_ < rowwidth_) {
+		map.get_rn(hollow_area_, &hollow_area_);
+		if ((phase_ & (Phase::kUpper | Phase::kLower)) && rowpos_ == delta_radius_) {
 			//  Jump over the hole.
-			const uint32_t holewidth = m_rowwidth - 2 * m_delta_radius;
+			const uint32_t holewidth = rowwidth_ - 2 * delta_radius_;
 			for (uint32_t i = 0; i < holewidth; ++i)
-				map.get_rn(m_hollow_area, &m_hollow_area);
-			m_rowpos += holewidth;
+				map.get_rn(hollow_area_, &hollow_area_);
+			rowpos_ += holewidth;
 		}
 	} else {
-		++m_row;
-		if (m_phase == Top and m_row == m_delta_radius)
-			m_phase = Upper;
+		++row_;
+		if (phase_ == Phase::kTop && row_ == delta_radius_) {
+			phase_ = Phase::kUpper;
+		}
 
 		// If we completed the widest, center line, switch into lower mode
-		// There are m_radius+1 lines in the upper "half", because the upper
+		// There are radius_+1 lines in the upper "half", because the upper
 		// half includes the center line.
-		else if (m_phase == Upper and m_row > m_hollow_area.radius) {
-			m_row = 1;
-			m_phase = Lower;
+		else if (phase_ == Phase::kUpper && row_ > hollow_area_.radius) {
+			row_ = 1;
+			phase_ = Phase::kLower;
 		}
 
-		if (m_phase & (Top|Upper)) {
-			map.get_bln(m_left, &m_hollow_area);
-			++m_rowwidth;
+		if (phase_ & (Phase::kTop | Phase::kUpper)) {
+			map.get_bln(left_, &hollow_area_);
+			++rowwidth_;
 		} else {
 
-			if (m_row > m_hollow_area.radius) {
-				m_phase = None;
-				return true; // early out
-			} else if (m_phase == Lower and m_row > m_hollow_area.hole_radius)
-				m_phase = Bottom;
+			if (row_ > hollow_area_.radius) {
+				phase_ = Phase::kNone;
+				return true;  // early out
+			} else if (phase_ == Phase::kLower && row_ > hollow_area_.hole_radius) {
+				phase_ = Phase::kBottom;
+			}
 
-			map.get_brn(m_left, &m_hollow_area);
-			--m_rowwidth;
+			map.get_brn(left_, &hollow_area_);
+			--rowwidth_;
 		}
 
-		m_left = m_hollow_area;
-		m_rowpos = 0;
+		left_ = hollow_area_;
+		rowpos_ = 0;
 	}
 
 	return true;
 }
-
-}
+}  // namespace Widelands

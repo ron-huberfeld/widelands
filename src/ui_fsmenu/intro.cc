@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,42 +13,40 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "intro.h"
+#include "ui_fsmenu/intro.h"
 
-#include "i18n.h"
+#include "base/i18n.h"
 
+FullscreenMenuIntro::FullscreenMenuIntro()
+   : FullscreenMenuBase(),
 
-Fullscreen_Menu_Intro::Fullscreen_Menu_Intro()
-	: Fullscreen_Menu_Base("splash.jpg"),
-
-// Text area
-m_message
-	(this,
-	 get_w() / 2, get_h() * 19 / 20,
-	 _("Press ESC or click to continue ..."), UI::Align_HCenter)
-{
-	m_message.set_font(ui_fn(), fs_small() * 6 / 5, RGBColor(192, 192, 128));
+     // Text area
+     message_(this,
+              get_w() / 2,
+              get_h() * 19 / 20,
+              0,
+              0,
+              _("Press any key or click to continue…"),
+              UI::Align::kCenter,
+              g_gr->styles().font_style(UI::FontStyle::kFsMenuIntro)) {
+	message_.set_font_scale(scale_factor());
+	add_overlay_image("images/loadscreens/splash.jpg",
+	                  FullscreenWindow::Alignment(UI::Align::kCenter, UI::Align::kCenter));
 }
 
-bool Fullscreen_Menu_Intro::handle_mousepress  (Uint8, int32_t, int32_t)
-{
-	end_modal(0);
-
-	return true;
-}
-bool Fullscreen_Menu_Intro::handle_mouserelease(Uint8, int32_t, int32_t)
-{
+bool FullscreenMenuIntro::handle_mousepress(uint8_t, int32_t, int32_t) {
+	end_modal<FullscreenMenuBase::MenuTarget>(FullscreenMenuBase::MenuTarget::kOk);
 	return true;
 }
 
-bool Fullscreen_Menu_Intro::handle_key(bool const down, SDL_keysym const code)
-{
-	if (down and code.sym == SDLK_ESCAPE)
-		end_modal(0);
+bool FullscreenMenuIntro::handle_key(const bool down, const SDL_Keysym) {
+	if (down) {
+		end_modal<FullscreenMenuBase::MenuTarget>(FullscreenMenuBase::MenuTarget::kOk);
+	}
 
-	return true;
+	return false;
 }

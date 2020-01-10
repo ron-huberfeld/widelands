@@ -1,40 +1,242 @@
 #!/bin/sh
 echo " "
-echo "################################################"
-echo "# Script to simplify compilations of Widelands #"
-echo "################################################"
+echo "###########################################################"
+echo "#     Script to simplify the compilation of Widelands     #"
+echo "###########################################################"
 echo " "
 echo "  Because of the many different systems Widelands"
 echo "  might be compiled on, we unfortunally can not"
 echo "  provide a simple way to prepare your system for"
 echo "  compilation. To ensure your system is ready, best"
-echo "  check http://wl.widelands.org/wiki/BuildingWidelands"
+echo "  check https://www.widelands.org/wiki/BuildingWidelands"
 echo " "
-echo "  You often find helpfully hands at our"
-echo "  * IRC Chat: http://wl.widelands.org/webchat/"
-echo "  * Forums: http://wl.widelands.org/forum/"
-echo "  * Mailinglist: http://wl.widelands.org/wiki/MailLists/"
+echo "  You will often find helpful hands at our"
+echo "  * IRC Chat: https://www.widelands.org/webchat/"
+echo "  * Forums: https://www.widelands.org/forum/"
+echo "  * Mailinglist: https://www.widelands.org/wiki/MailLists/"
 echo " "
-echo "  Please post your bugreports and feature requests at:"
-echo "  https://bugs.launchpad.net/widelands"
+echo "  Please post your bug reports and feature requests at:"
+echo "  https://github.com/widelands/widelands/issues"
 echo " "
-echo "################################################"
+echo "###########################################################"
 echo " "
+print_help () {
+    # Print help for our options
+    echo "Per default, this script will create a full debug build."
+    echo "Unless explicitly switched off, AddressSanitizer will"
+    echo "be used as well with debug builds."
+    echo " "
+    echo "The following options are available:"
+    echo " "
+    echo "-h or --help          Print this help."
+    echo " "
+    echo " "
+    echo "Omission options:"
+    echo " "
+    echo "-w or --no-website    Omit building of website binaries."
+    echo " "
+    echo "-t or --no-translations"
+    echo "                      Omit building translations."
+    echo " "
+    echo "-s or --skip-tests"
+    echo "                      Skip linking and executing the tests."
+    echo " "
+    echo "-a or --no-asan       If in debug mode, switch off the AddressSanitizer."
+    echo "                      Release builds are created without AddressSanitizer"
+    echo "                      by default."
+    echo " "
+    echo "--without-xdg         Disable support for the XDG Base Directory Specification."
+    echo " "
+    echo "Compiler options:"
+    echo " "
+    echo "-j <number> or --cores <number>"
+    echo "                      Set the number of processor cores to use for"
+    echo "                      compiling and linking. Default is to leave 1 core"
+    echo "                      free."
+    echo " "
+    echo "-r or --release       Create a release build. If this is not set,"
+    echo "                      a debug build will be created."
+    echo " "
+    echo "--gcc                 Try to build with GCC rather than the system default."
+    echo "                      If you built with Clang before, you will have to clean"
+    echo "                      your build directory before switching compilers."
+    echo "                      Expects that the compiler is in '/usr/bin/'."
+    echo " "
+    echo "--clang               Try to build with Clang rather than the system default."
+    echo "                      If you built with GCC before, you will have to clean"
+    echo "                      your build directory before switching compilers."
+    echo "                      Expects that the compiler is in '/usr/bin/'."
+    echo " "
+    echo "For the AddressSanitizer output to be useful, some systems (e.g. Ubuntu Linux)"
+    echo "require that you set a symlink to the symbolizer. For example:"
+    echo " "
+    echo "    sudo ln -s /usr/bin/llvm-symbolizer-3.8 /usr/bin/llvm-symbolizer"
+    echo " "
+    echo "More info about AddressSanitizer at:"
+    echo " "
+    echo "    https://clang.llvm.org/docs/AddressSanitizer.html"
+    echo " "
+    return
+  }
 
 
+## Get command and options to use in update.sh
+COMMANDLINE="$0 $@"
 
-# TODO  user interaction and functions for installation including a check
-# TODO  whether the selected directories are writeable and a password check
-# TODO  to become root / Administrator if the dirs are not writeable.
+## Options to control the build.
+BUILD_WEBSITE="ON"
+BUILD_TRANSLATIONS="ON"
+BUILD_TESTS="ON"
+BUILD_TYPE="Debug"
+USE_ASAN="ON"
+COMPILER="default"
+USE_XDG="ON"
 
+if [ "$(uname)" = "Darwin" ]; then
+  CORES="$(expr $(sysctl -n hw.ncpu) - 1)"
+else
+  CORES="$(nproc --ignore=1)"
+fi
 
+for opt in "$@"
+do
+  case $opt in
+    -a|--no-asan)
+      USE_ASAN="OFF"
+    shift
+    ;;
+    -h|--help)
+      print_help
+      exit 0
+    shift
+    ;;
+    -j|--cores)
+      MAXCORES=$((CORES + 1))
+      if [ "$2" ]; then
+        if [ "$MAXCORES" -ge "$2" ]; then
+          CORES="$2"
+        else
+          echo "Maximum number of supported cores is $MAXCORES."
+          CORES="$MAXCORES"
+        fi
+      else
+        echo "Call -j/--cores with a number, e.g. '-j $MAXCORES'"
+        exit 1
+      fi
+    shift # past argument
+    shift # past value
+    ;;
+    -r|--release)
+      BUILD_TYPE="Release"
+      USE_ASAN="OFF"
+    shift
+    ;;
+    -t|--no-translations)
+      BUILD_TRANSLATIONS="OFF"
+    shift
+    ;;
+    -s|--skip-tests)
+      BUILD_TESTS="OFF"
+    shift
+    ;;
+    -w|--no-website)
+      BUILD_WEBSITE="OFF"
+    shift
+    ;;
+    --gcc)
+      if [ -f /usr/bin/gcc -a /usr/bin/g++ ]; then
+        export CC=/usr/bin/gcc
+        export CXX=/usr/bin/g++
+      fi
+    shift
+    ;;
+    --clang)
+      if [ -f /usr/bin/clang -a /usr/bin/clang++ ]; then
+        export CC=/usr/bin/clang
+        export CXX=/usr/bin/clang++
+      fi
+    shift
+    ;;
+    --without-xdg)
+        USE_XDG="OFF"
+    shift
+    ;;
+    *)
+          # unknown option
+    ;;
+  esac
+done
+
+echo "Using ${CORES} core(s)."
+echo ""
+
+if [ $BUILD_WEBSITE = "ON" ]; then
+  echo "A complete build will be created."
+  echo "You can use -w or --no-website to omit building and"
+  echo "linking website-related executables."
+else
+  echo "Any website-related code will be OMITTED in the build."
+  echo "Make sure that you have created and tested a full"
+  echo "build before submitting code to the repository!"
+fi
+echo " "
+if [ $BUILD_TRANSLATIONS = "ON" ]; then
+  echo "Translations will be built."
+  echo "You can use -t or --no-translations to omit building them."
+else
+	echo "Translations will not be built."
+fi
+echo " "
+if [ $BUILD_TESTS = "ON" ]; then
+  echo "Tests will be built."
+  echo "You can use -s or --skip-tests to omit building them."
+else
+	echo "Tests will not be built."
+fi
+echo " "
+echo "###########################################################"
+echo " "
+if [ $BUILD_TYPE = "Release" ]; then
+  echo "Creating a Release build."
+else
+  echo "Creating a Debug build. Use -r to create a Release build."
+fi
+echo " "
+if [ $USE_ASAN = "ON" ]; then
+  echo "Will build with AddressSanitizer."
+  echo "https://clang.llvm.org/docs/AddressSanitizer.html"
+  echo "You can use -a or --no-asan to switch it off."
+else
+  echo "Will build without AddressSanitizer."
+fi
+if [ $USE_XDG = "ON" ]; then
+  echo " "
+  echo "Basic XDG Base Directory Specification will be used on Linux"
+  echo "if no existing \$HOME/.widelands folder is found."
+  echo "The widelands user data can be found in \$XDG_DATA_HOME/widelands"
+  echo "and defaults to \$HOME/.local/share/widelands."
+  echo "The widelands user configuration can be found in \$XDG_CONFIG_HOME/widelands"
+  echo "and defaults to \$HOME/.config/widelands."
+  echo "See https://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html"
+  echo "for more information."
+  echo " "
+fi
+echo " "
+echo "###########################################################"
+echo " "
+echo "Call 'compile.sh -h' or 'compile.sh --help' for help."
+echo ""
+echo "For instructions on how to adjust options and build with"
+echo "CMake, please take a look at"
+echo "https://www.widelands.org/wiki/BuildingWidelands/."
+echo " "
+echo "###########################################################"
+echo " "
 
 ######################################
 # Definition of some local variables #
 ######################################
-var_build=0 # 0 == debug(default), 1 == release
-var_build_lang=0 # 0 = false 
-var_updater=0 # 0 = false
+buildtool="" #Use ninja by default, fall back to make if that is not available.
 ######################################
 
 
@@ -52,91 +254,38 @@ var_updater=0 # 0 = false
     return 0
   }
 
-  # Ask the user what parts and how Widelands should be build.
-  # And save the values
-  user_interaction () {
-    local_var_ready=0
-    while [ $local_var_ready -eq 0 ]
-    do
-      echo " "
-      echo "  Should Widelands be build in [r]elease or [d]ebug mode?"
-      echo " "
-      read local_var_choice
-      echo " "
-      case $local_var_choice in
-        r) echo "  -> Release mode selected" ; var_build=1 ; local_var_ready=1 ;;
-        d) echo "  -> Debug mode selected" ; var_build=0 ; local_var_ready=1 ;;
-        *) echo "  -> Bad choice. Please try again!" ;;
-      esac
-    done
-    local_var_ready=0
-    if [ $var_build -eq 0 ] ; then
-      while [ $local_var_ready -eq 0 ]
-      do
-        echo " "
-        echo "  Should translations be build [y]/[n]?"
-        echo " "
-        read local_var_choice
-        echo " "
-        case $local_var_choice in
-          y) echo "  -> Translations will be build" ; var_build_lang=1 ; local_var_ready=1 ;;
-          n) echo "  -> Translations will not be build" ; var_build_lang=0 ; local_var_ready=1 ;;
-          *) echo "  -> Bad choice. Please try again!" ;;
-        esac
-      done
+  set_buildtool () {
+    #Defaults to ninja, but if that is not found, we use make instead
+    if [ `command -v ninja` ] ; then
+      buildtool="ninja"
+    #On some systems (most notably Fedora), the binary is called ninja-build
+    elif [ `command -v ninja-build` ] ; then
+      buildtool="ninja-build"
+    #... and some systems refer to GNU make as gmake
+    elif [ `command -v gmake` ] ; then
+      buildtool="gmake"
+    else
+      buildtool="make"
     fi
-    return 0
   }
 
   # Check if directories / links already exists and create / update them if needed.
   prepare_directories_and_links () {
-    # remove build/compile directory (this is the old location)
-    if [ -e build/compile ] ; then
-      echo " "
-      echo "  The build directory has changed"
-      echo "  from ./build/compile to ./build."
-      echo "  The old directory ./build/compile can be removed."
-      echo "  Please backup any files you might not want to lose."
-      echo "  Most users can safely say yes here."
-      echo "  Do you want to remove the directory ./build/compile? [y]es/[n]o"
-      echo " "
-      read local_var_choice
-      echo " "
-      case $local_var_choice in
-        y) echo "  -> Removing directory ./build/compile. This may take a while..."
-	   rm locale
-	   rm -r build/compile || true
-	   if [ -e build/compile ] ; then
-             echo "  -> Directory could not be removed. This is not fatal, continuing."
-	   else
-             echo "  -> Directory removed."
-	   fi ;;
-        n) echo "  -> Left the directory untouched." ;;
-        *) echo "  -> Bad choice. Please try again!" ;;
-      esac
-    fi
-
-    test -d build || mkdir -p build
     test -d build/locale || mkdir -p build/locale
-    test -e locale || ln -s build/locale
-
-    cd build
-
+    test -e data/locale || ln -s ../build/locale data/locale
     return 0
   }
 
   # Compile Widelands
   compile_widelands () {
-    var_build_type=""
-    if [ $var_build -eq 0 ] ; then
-      var_build_type="Debug"
+    if [ $buildtool = "ninja" ] || [ $buildtool = "ninja-build" ] ; then
+      cmake -G Ninja .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DOPTION_BUILD_WEBSITE_TOOLS=$BUILD_WEBSITE -DOPTION_BUILD_TRANSLATIONS=$BUILD_TRANSLATIONS -DOPTION_BUILD_TESTS=$BUILD_TESTS -DOPTION_ASAN=$USE_ASAN -DUSE_XDG=$USE_XDG
     else
-      var_build_type="Release"
+      cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DOPTION_BUILD_WEBSITE_TOOLS=$BUILD_WEBSITE -DOPTION_BUILD_TRANSLATIONS=$BUILD_TRANSLATIONS -DOPTION_BUILD_TESTS=$BUILD_TESTS -DOPTION_ASAN=$USE_ASAN -DUSE_XDG=$USE_XDG
     fi
 
-    echo " "
-    cmake -DWL_PORTABLE=true .. -DCMAKE_EXE_CXX_FLAGS="${CFLAGS}" -DCMAKE_BUILD_TYPE="${var_build_type}"
-    make ${MAKEOPTS}
+    $buildtool -j $CORES
+
     return 0
   }
 
@@ -145,66 +294,58 @@ var_updater=0 # 0 = false
     rm  -f ../VERSION || true
     rm  -f ../widelands || true
 
-    mv VERSION ../VERSION
+    rm  -f ../wl_map_object_info || true
+    rm  -f ../wl_map_info || true
+
+    cp VERSION ../VERSION
     mv src/widelands ../widelands
+
+    if [ $BUILD_WEBSITE = "ON" ]; then
+        mv ../build/src/website/wl_create_spritesheet ../wl_create_spritesheet
+        mv ../build/src/website/wl_map_object_info ../wl_map_object_info
+        mv ../build/src/website/wl_map_info ../wl_map_info
+    fi
     return 0
   }
 
-  # Ask the user whether an update script should be created and if yes, create it.
-  update_script () {
-    # First check if this is an bzr checkout at all - only in that case,
+  create_update_script () {
+    # First check if this is an git checkout at all - only in that case,
     # creation of a script makes any sense.
-    if ! [ -f .bzr/branch-format ] ; then
+    STATUS="$(git status)"
+    if [ -n "${STATUS##*nothing to commit, working tree clean*}" ]; then
+      echo "You don't appear to be using Git, or your working tree is not clean. An update script will not be created"
+      echo "${STATUS}"
       return 0
     fi
-    while :
-    do
-      echo " "
-      echo "  Should I create an update script? [y]es/[n]o"
-      echo " "
-      read local_var_choice
-      echo " "
-      case $local_var_choice in
-        y) rm -f update.sh || true
-           (echo "#!/bin/sh"
-            echo "echo \" \""
-            echo "echo \"################################################\""
-            echo "echo \"#            Widelands update script.          #\""
-            echo "echo \"################################################\""
-            echo "echo \" \""
-            echo " "
-            echo "set -e"
-            echo "if ! [ -f src/wlapplication.cc ] ; then"
-            echo "  echo \"  This script must be run from the main directory of the widelands\""
-            echo "  echo \"  source code.\""
-            echo "  exit 1"
-            echo "fi"
-            echo " "
-            echo "bzr pull"
-            echo "cd build"
-            echo "make"
-            if [ $var_build_lang -eq 1 ] ; then
-              echo "make lang"
-            fi
-            echo "rm  ../VERSION || true"
-            echo "rm  ../widelands || true"
-            echo "mv VERSION ../VERSION"
-            echo "mv src/widelands ../widelands"
-            echo "cd .."
-            echo " "
-            echo "echo \" \""
-            echo "echo \"################################################\""
-            echo "echo \"#      Widelands was updated successfully.     #\""
-            echo "echo \"# You should be able to run it via ./widelands #\""
-            echo "echo \"################################################\""
-           ) > update.sh
-           chmod +x ./update.sh
-           echo "  -> The update script has successfully been created."
-           var_updater=1 ; return 0 ;;
-        n) echo "  -> No update script has been created." ; return 0 ;;
-        *) echo "  -> Bad choice. Please try again!" ;;
-      esac
-    done
+      rm -f update.sh || true
+      cat > update.sh << END_SCRIPT
+#!/bin/sh
+echo "################################################"
+echo "#            Widelands update script.          #"
+echo "################################################"
+echo " "
+
+set -e
+if ! [ -f src/wlapplication.cc ] ; then
+  echo "  This script must be run from the main directory of the widelands"
+  echo "  source code."
+  exit 1
+fi
+
+# Checkout current branch and pull latest master
+git checkout
+git pull https://github.com/widelands/widelands.git master
+
+$COMMANDLINE
+
+echo " "
+echo "################################################"
+echo "#      Widelands was updated successfully.     #"
+echo "# You should be able to run it via ./widelands #"
+echo "################################################"
+END_SCRIPT
+      chmod +x ./update.sh
+      echo "  -> The update script has successfully been created."
   }
 ######################################
 
@@ -215,24 +356,57 @@ var_updater=0 # 0 = false
 ######################################
 set -e
 basic_check
-user_interaction
+set_buildtool
 prepare_directories_and_links
-compile_widelands
-if [ $var_build_lang -eq 1 ] ; then
-  make lang
+
+# Dependency check doesn't work with ninja, so we do it manually here
+if [ $BUILD_TYPE = "Debug" -a \( $buildtool = "ninja" -o $buildtool = "ninja-build" \) ]; then
+  utils/build_deps.py
 fi
+
+mkdir -p build
+cd build
+compile_widelands
 move_built_files
 cd ..
-update_script
+create_update_script
 echo " "
-echo "#####################################################"
-echo "# Congratulations Widelands was successfully build. #"
-echo "# You should now be able to run Widelands via       #"
-echo "# typing ./widelands + ENTER in your terminal       #"
-if [ $var_updater -eq 1 ] ; then
-  echo "#                                                   #"
-  echo "# You can update Widelands via running ./update.sh  #"
-  echo "# in the same directory you ran this script in.     #"
+echo "###########################################################"
+echo "# Congratulations! Widelands has been built successfully  #"
+echo "# with the following settings:                            #"
+echo "#                                                         #"
+if [ $BUILD_TYPE = "Release" ]; then
+  echo "# - Release build                                         #"
+else
+  echo "# - Debug build                                           #"
 fi
-echo "#####################################################"
+if [ $BUILD_TRANSLATIONS = "ON" ]; then
+  echo "# - Translations                                          #"
+else
+  echo "# - No translations                                       #"
+fi
+if [ $BUILD_TESTS = "ON" ]; then
+  echo "# - Tests                                                 #"
+else
+  echo "# - No tests                                              #"
+fi
+
+if [ $USE_XDG = "ON" ]; then
+  echo "# - With support for the XDG Base Directory Specification #"
+else
+  echo "# - Without support for the XDG Base Directory            #"
+  echo "#   Specification                                         #"
+fi
+if [ $BUILD_WEBSITE = "ON" ]; then
+  echo "# - Website-related executables                           #"
+else
+  echo "# - No website-related executables                        #"
+fi
+echo "#                                                         #"
+echo "# You should now be able to run Widelands via             #"
+echo "# typing ./widelands + ENTER in your terminal             #"
+echo "#                                                         #"
+echo "# You can update Widelands via running ./update.sh        #"
+echo "# in the same directory that you ran this script in.      #"
+echo "###########################################################"
 ######################################

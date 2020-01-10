@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2009 by the Widelands Development Team
+ * Copyright (C) 2007-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,12 +13,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef REPLAY_H
-#define REPLAY_H
+#ifndef WL_LOGIC_REPLAY_H
+#define WL_LOGIC_REPLAY_H
 
 /**
  * Allow players to watch previous game in a platform-independent way.
@@ -28,56 +28,54 @@
  * playercommands.
  */
 
-#include <stdint.h>
 #include <cstring>
 #include <string>
 
-#define REPLAY_DIR "replays"
-#define REPLAY_SUFFIX ".wrpl"
+#include <stdint.h>
 
-struct md5_checksum;
+struct Md5Checksum;
+
+class StreamRead;
+class StreamWrite;
 
 namespace Widelands {
 struct Command;
-struct Game;
-struct PlayerCommand;
-struct StreamRead;
-struct StreamWrite;
+class Game;
+class PlayerCommand;
 
 /**
  * Read game replays from disk.
  */
-struct ReplayReader {
-	ReplayReader(Game &, std::string const & filename);
+class ReplayReader {
+public:
+	ReplayReader(Game& game, const std::string& filename);
 	~ReplayReader();
 
-	Command * GetNextCommand(uint32_t time);
-	bool EndOfReplay();
+	Command* get_next_command(uint32_t time);
+	bool end_of_replay();
 
 private:
-	Game       & m_game;
-	StreamRead * m_cmdlog;
+	StreamRead* cmdlog_;
 
-	uint32_t m_replaytime;
+	uint32_t replaytime_;
 };
 
 /**
  * Write game replays to disk.
  */
-struct ReplayWriter {
-	ReplayWriter(Game &, std::string const & filename);
+class ReplayWriter {
+public:
+	ReplayWriter(Game&, const std::string& filename);
 	~ReplayWriter();
 
-	void SendPlayerCommand(PlayerCommand *);
-	void SendSync(md5_checksum const &);
+	void send_player_command(PlayerCommand*);
+	void send_sync(const Md5Checksum&);
 
 private:
-	Game        & m_game;
-	StreamWrite * m_cmdlog;
-	std::string m_filename;
+	Game& game_;
+	StreamWrite* cmdlog_;
+	std::string filename_;
 };
+}  // namespace Widelands
 
-}
-
-#endif
-
+#endif  // end of include guard: WL_LOGIC_REPLAY_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,495 +13,257 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "ware_statistics_menu.h"
+#include "wui/ware_statistics_menu.h"
 
+#include "base/i18n.h"
 #include "graphic/graphic.h"
-#include "i18n.h"
-#include "interactive_player.h"
-#include "logic/player.h"
 #include "graphic/rendertarget.h"
-#include "logic/tribe.h"
-#include "logic/warelist.h"
-#include "plot_area.h"
-
+#include "graphic/text_layout.h"
+#include "logic/map_objects/tribes/tribe_descr.h"
+#include "logic/map_objects/tribes/warelist.h"
+#include "logic/player.h"
 #include "ui_basic/button.h"
 #include "ui_basic/checkbox.h"
+#include "ui_basic/slider.h"
+#include "ui_basic/tabpanel.h"
 #include "ui_basic/textarea.h"
+#include "wui/interactive_player.h"
+#include "wui/plot_area.h"
+#include "wui/waresdisplay.h"
 
+constexpr int kPlotHeight = 145;
+constexpr int kPlotWidth = 250;
+constexpr int kSpacing = 5;
 
-#define WARES_DISPLAY_BG "pics/ware_list_bg.png"
+constexpr int kInactiveColorIndex = 0;
 
-#define MIN_WARES_PER_LINE 7
-#define MAX_WARES_PER_LINE 11
-
-
-#define PLOT_HEIGHT 100
-
-#define COLOR_BOX_HEIGHT 7
+static const char pic_tab_production[] = "images/wui/stats/menu_tab_wares_production.png";
+static const char pic_tab_consumption[] = "images/wui/stats/menu_tab_wares_consumption.png";
+static const char pic_tab_economy[] = "images/wui/stats/menu_tab_wares_econ_health.png";
+static const char pic_tab_stock[] = "images/wui/stats/menu_tab_wares_stock.png";
 
 static const RGBColor colors[] = {
-	RGBColor  (0, 210, 254),
-	RGBColor(255, 157,  74),
-	RGBColor(222,  97,  98),
-	RGBColor(115,  82, 157),
-	RGBColor(172, 113, 205),
-	RGBColor(156, 117, 189),
-	RGBColor(156, 165, 172),
-	RGBColor (16,  56, 164),
-	RGBColor(115,  68,  32),
-	RGBColor(172,   0,   0),
-	RGBColor  (0,  85,  16),
-	RGBColor (98,  36,  90),
-	RGBColor (90,  64, 115),
-	RGBColor (32,  36,  32),
-	RGBColor(153, 153, 153),
-	RGBColor(102, 102, 102),
-	RGBColor (51,  51,  51),
-	RGBColor(255, 204,   0),
-	RGBColor(255, 153,   0),
-	RGBColor(255, 102,   0),
-	RGBColor(255,  51,   0),
-	RGBColor (51,  51,  51),
-	RGBColor(102, 102, 102),
-	RGBColor(153, 153, 153),
-	RGBColor(204, 204, 204),
-	RGBColor(255, 255, 255),
-	RGBColor(153, 204,   0),
-	RGBColor(204, 153,   0),
-	RGBColor(255, 204,  51),
-	RGBColor(255, 204, 102),
-	RGBColor(255, 153, 102),
-	RGBColor(255, 102,  51),
-	RGBColor(204,  51,   0),
-	RGBColor(204,   0,  51),
-	RGBColor(204, 255,   0),
-	RGBColor(204, 255,  51),
-	RGBColor (51,  51,   0),
-	RGBColor(102, 102,   0),
-	RGBColor(153, 153,   0),
-	RGBColor(204, 204,   0),
-	RGBColor(255, 255,   0),
-	RGBColor(204, 153,  51),
-	RGBColor(204, 102,  51),
-	RGBColor (51,   0,   0),
-	RGBColor(102,   0,   0),
-	RGBColor(153,   0,   0),
-	RGBColor(204,   0,   0),
-	RGBColor(255,   0,   0),
-	RGBColor(255,  51, 102),
-	RGBColor(255,   0,  51),
-	RGBColor(153, 255,   0),
-	RGBColor(204, 255, 102),
-	RGBColor(153, 204,  51),
-	RGBColor(102, 102,  51),
-	RGBColor(153, 153,  51),
-	RGBColor(204, 204,  51),
-	RGBColor(255, 255,  51),
-	RGBColor(153, 102,   0),
-	RGBColor(153,  51,   0),
-	RGBColor(102,  51,  51),
-	RGBColor(153,  51,  51),
-	RGBColor(204,  51,  51),
-	RGBColor(255,  51,  51),
-	RGBColor(204,  51, 102),
-	RGBColor(255, 102, 153),
-	RGBColor(255,   0, 102),
-	RGBColor(102, 255,   0),
-	RGBColor(153, 255, 102),
-	RGBColor(102, 204,  51),
-	RGBColor(102, 153,   0),
-	RGBColor(153, 153, 102),
-	RGBColor(204, 204, 102),
-	RGBColor(255, 255, 102),
-	RGBColor(153, 102,  51),
-	RGBColor(102,  51,   0),
-	RGBColor(153, 102, 102),
-	RGBColor(204, 102, 102),
-	RGBColor(255, 102, 102),
-	RGBColor(153,   0,  51),
-	RGBColor(204,  51, 153),
-	RGBColor(255, 102, 204),
-	RGBColor(255,   0, 153),
-	RGBColor (51, 255,   0),
-	RGBColor(102, 255,  51),
-	RGBColor (51, 153,   0),
-	RGBColor(102, 204,   0),
-	RGBColor(153, 255,  51),
-	RGBColor(204, 204, 153),
-	RGBColor(255, 255, 153),
-	RGBColor(204, 153, 102),
-	RGBColor(204, 102,   0),
-	RGBColor(204, 153, 153),
-	RGBColor(255, 153, 153),
-	RGBColor(255,  51, 153),
-	RGBColor(204,   0, 102),
-	RGBColor(153,   0, 102),
-	RGBColor(255,  51, 204),
-	RGBColor(255,   0, 204),
-	RGBColor  (0, 204,   0),
-	RGBColor (51, 204,   0),
-	RGBColor (51, 102,   0),
-	RGBColor(102, 153,  51),
-	RGBColor(153, 204, 102),
-	RGBColor(204, 255, 153),
-	RGBColor(255, 255, 204),
-	RGBColor(255, 204, 153),
-	RGBColor(255, 153,  51),
-	RGBColor(255, 204, 204),
-	RGBColor(255, 153, 204),
-	RGBColor(204, 102, 153),
-	RGBColor(153,  51, 102),
-	RGBColor(102,   0,  51),
-	RGBColor(204,   0, 153),
-	RGBColor (51,   0,  51),
-	RGBColor (51, 204,  51),
-	RGBColor(102, 204, 102),
-	RGBColor  (0, 255,   0),
-	RGBColor (51, 255,  51),
-	RGBColor(102, 255, 102),
-	RGBColor(153, 255, 153),
-	RGBColor(204, 255, 204),
-	RGBColor(204, 153, 204),
-	RGBColor(153, 102, 153),
-	RGBColor(153,  51, 153),
-	RGBColor(153,  0,  153),
-	RGBColor(102,  51, 102),
-	RGBColor(102,   0, 102),
-	RGBColor  (0, 102,   0),
-	RGBColor (51, 102,  51),
-	RGBColor  (0, 153,   0),
-	RGBColor (51, 153,  51),
-	RGBColor(102, 153, 102),
-	RGBColor(153, 204, 153),
-	RGBColor(255, 204, 255),
-	RGBColor(255, 153, 255),
-	RGBColor(255, 102, 255),
-	RGBColor(255,  51, 255),
-	RGBColor(255,   0, 255),
-	RGBColor(204, 102, 204),
-	RGBColor(204,  51, 204),
-	RGBColor  (0,  51,   0),
-	RGBColor  (0, 204,  51),
-	RGBColor  (0, 102,  51),
-	RGBColor (51, 153, 102),
-	RGBColor(102, 204, 153),
-	RGBColor(153, 255, 204),
-	RGBColor(204, 255, 255),
-	RGBColor (51, 153, 255),
-	RGBColor(153, 204, 255),
-	RGBColor(204, 204, 255),
-	RGBColor(204, 153, 255),
-	RGBColor(153, 102, 204),
-	RGBColor(102,  51, 153),
-	RGBColor (51,   0, 102),
-	RGBColor(153,   0, 204),
-	RGBColor(204,   0, 204),
-	RGBColor  (0, 255,  51),
-	RGBColor (51, 255, 102),
-	RGBColor  (0, 153,  51),
-	RGBColor  (0, 204, 102),
-	RGBColor (51, 255, 153),
-	RGBColor(153, 255, 255),
-	RGBColor(153, 204, 204),
-	RGBColor  (0, 102, 204),
-	RGBColor(102, 153, 204),
-	RGBColor(153, 153, 255),
-	RGBColor(153, 153, 204),
-	RGBColor(153,  51, 255),
-	RGBColor(102,   0, 204),
-	RGBColor(102,   0, 153),
-	RGBColor(204,  51, 255),
-	RGBColor(204,   0, 255),
-	RGBColor  (0, 255, 102),
-	RGBColor(102, 255, 153),
-	RGBColor (51, 204, 102),
-	RGBColor  (0, 153, 102),
-	RGBColor(102, 255, 255),
-	RGBColor(102, 204, 204),
-	RGBColor(102, 153, 153),
-	RGBColor  (0,  51, 102),
-	RGBColor (51, 102, 153),
-	RGBColor(102, 102, 255),
-	RGBColor(102, 102, 204),
-	RGBColor(102, 102, 153),
-	RGBColor (51,   0, 153),
-	RGBColor(153,  51, 204),
-	RGBColor(204, 102, 255),
-	RGBColor(153,   0, 255),
-	RGBColor  (0, 255, 153),
-	RGBColor(102, 255, 204),
-	RGBColor (51, 204, 153),
-	RGBColor (51, 255, 255),
-	RGBColor (51, 204, 204),
-	RGBColor (51, 153, 153),
-	RGBColor (51, 102, 102),
-	RGBColor  (0, 102, 153),
-	RGBColor  (0,  51, 153),
-	RGBColor (51,  51, 255),
-	RGBColor (51,  51, 204),
-	RGBColor (51,  51, 153),
-	RGBColor (51,  51, 102),
-	RGBColor(102,  51, 204),
-	RGBColor(153, 102, 255),
-	RGBColor(102,   0, 255),
-	RGBColor  (0, 255, 204),
-	RGBColor (51, 255, 204),
-	RGBColor  (0, 255, 255),
-	RGBColor  (0, 204, 204),
-	RGBColor  (0, 153, 153),
-	RGBColor  (0, 102, 102),
-	RGBColor  (0,  51,  51),
-	RGBColor (51, 153, 204),
-	RGBColor (51, 102, 204),
-	RGBColor  (0,   0, 255),
-	RGBColor  (0,   0, 204),
-	RGBColor  (0,   0, 153),
-	RGBColor  (0,   0, 102),
-	RGBColor  (0,   0,  51),
-	RGBColor(102,  51, 255),
-	RGBColor (51,   0, 255),
-	RGBColor  (0, 204, 153),
-	RGBColor  (0, 153, 202),
-	RGBColor (51, 204, 255),
-	RGBColor(102, 204, 255),
-	RGBColor(102, 153, 255),
-	RGBColor (51, 102, 255),
-	RGBColor  (0,  51, 204),
-	RGBColor (51,   0, 204),
-	RGBColor(255, 255, 255),
-	RGBColor(204, 204, 204),
-	RGBColor(153, 153, 153),
-	RGBColor(102, 102, 102),
-	RGBColor (51,  51,  51),
-	RGBColor  (0, 204, 255),
-	RGBColor  (0, 153, 255),
-	RGBColor  (0, 102, 255),
-	RGBColor  (0,  51, 255),
-	RGBColor (51,  51,  51),
-	RGBColor(102, 102, 102),
-	RGBColor(153, 153, 153),
-	RGBColor(204, 204, 204),
-	RGBColor(255, 255, 255),
+   RGBColor(115, 115, 115),  // inactive
+   RGBColor(255, 0, 0),     RGBColor(0, 144, 12),    RGBColor(0, 0, 255),    RGBColor(249, 125, 6),
+   RGBColor(255, 204, 0),   RGBColor(101, 0, 33),    RGBColor(0, 143, 255),  RGBColor(0, 70, 31),
+   RGBColor(106, 44, 5),    RGBColor(143, 1, 1),     RGBColor(0, 255, 0),    RGBColor(85, 0, 111),
+   RGBColor(0, 243, 255),   RGBColor(32, 36, 32),    RGBColor(189, 118, 24), RGBColor(255, 0, 51),
+   RGBColor(153, 204, 0),   RGBColor(0, 60, 77),     RGBColor(77, 15, 224),  RGBColor(255, 0, 208),
+   RGBColor(255, 51, 0),    RGBColor(43, 72, 183),   RGBColor(255, 93, 93),  RGBColor(15, 177, 18),
+   RGBColor(252, 89, 242),  RGBColor(255, 255, 255), RGBColor(61, 214, 128), RGBColor(102, 102, 0),
+   RGBColor(169, 118, 93),  RGBColor(255, 204, 102), RGBColor(65, 50, 106),  RGBColor(220, 255, 0),
+   RGBColor(204, 51, 0),    RGBColor(192, 0, 67),    RGBColor(120, 203, 65), RGBColor(204, 255, 51),
+   RGBColor(20, 104, 109),  RGBColor(129, 80, 21),   RGBColor(153, 153, 0),  RGBColor(221, 69, 77),
+   RGBColor(34, 136, 83),   RGBColor(106, 107, 207), RGBColor(204, 102, 51), RGBColor(127, 28, 75),
+   RGBColor(111, 142, 204), RGBColor(174, 10, 0),    RGBColor(96, 143, 71),  RGBColor(163, 74, 128),
+   RGBColor(183, 142, 10),  RGBColor(105, 155, 160),  // shark infested water, run!
 };
 
-/*
- * This class is only needed here, that's
- * why it is defined here.
- *
- * This class is the same as an ordinary
- * checkbox, the only difference is, it has
- * a small rectangle on it with the color
- * of the graph and it needs a picture
- */
-struct WSM_Checkbox : public UI::Checkbox {
-	WSM_Checkbox(UI::Panel *, Point, int32_t id, PictureID picid, RGBColor);
+static const uint32_t colors_length = sizeof(colors) / sizeof(RGBColor);
 
-	virtual void draw(RenderTarget &);
-
+struct StatisticWaresDisplay : public AbstractWaresDisplay {
 private:
-	PictureID  m_pic;
-	RGBColor   m_color;
-};
+	std::vector<uint8_t>& color_map_;
 
-
-WSM_Checkbox::WSM_Checkbox
-	(UI::Panel * const parent,
-	 Point       const p,
-	 int32_t     const id,
-	 PictureID   const picid,
-	 RGBColor    const color)
-:
-UI::Checkbox(parent, p, g_gr->get_picture(PicMod_Game,  WARES_DISPLAY_BG)),
-m_pic       (picid),
-m_color     (color)
-{
-	set_id(id);
-}
-
-/*
- * draw
- */
-void WSM_Checkbox::draw(RenderTarget & dst) {
-	//  First, draw normal.
-	UI::Checkbox::draw(dst);
-
-	//  Now, draw a small box with the color.
-	assert(1 <= get_inner_w());
-	compile_assert(2 <= COLOR_BOX_HEIGHT);
-	dst.fill_rect
-		(Rect(Point(1, 1), get_inner_w() - 1, COLOR_BOX_HEIGHT - 2), m_color);
-
-	//  and the item
-	dst.blit
-		(Point((get_inner_w() - WARE_MENU_PIC_WIDTH) / 2, COLOR_BOX_HEIGHT),
-		 m_pic);
-}
-
-
-Ware_Statistics_Menu::Ware_Statistics_Menu
-	(Interactive_Player & parent, UI::UniqueWindow::Registry & registry)
-:
-UI::UniqueWindow
-	(&parent, "ware_statistics", &registry, 400, 270, _("Ware Statistics")),
-m_parent(&parent)
-{
-	set_cache(false);
-
-	//  First, we must decide about the size.
-	uint8_t const nr_wares = parent.get_player()->tribe().get_nrwares().value();
-	uint32_t wares_per_row = MIN_WARES_PER_LINE;
-	while (nr_wares % wares_per_row && wares_per_row <= MAX_WARES_PER_LINE)
-		++wares_per_row;
-	const uint32_t nr_rows =
-		nr_wares / wares_per_row + (nr_wares % wares_per_row ? 1 : 0);
-
-#define spacing 5
-	Point const offs(spacing, 30);
-	Point       pos (offs);
-
-	set_inner_size
-		(10,
-		 (offs.y + spacing + PLOT_HEIGHT + spacing +
-		  nr_rows * (WARE_MENU_PIC_HEIGHT + spacing) + 100));
-
-
-	m_plot =
-		new WUIPlot_Area
-			(this,
-			 spacing, offs.y + spacing, get_inner_w() - 2 * spacing, PLOT_HEIGHT);
-	m_plot->set_sample_rate(STATISTICS_SAMPLE_TIME);
-	m_plot->set_plotmode(WUIPlot_Area::PLOTMODE_RELATIVE);
-
-	//  all wares
-	Widelands::Ware_Index::value_t cur_ware = 0;
-	int32_t dposy    = 0;
-	pos.y += PLOT_HEIGHT + 2 * spacing;
-	Widelands::Tribe_Descr const & tribe = parent.get_player()->tribe();
-	for (uint32_t y = 0; y < nr_rows; ++y) {
-		pos.x = spacing;
-		for
-			(uint32_t x = 0;
-			 x < wares_per_row and cur_ware < nr_wares;
-			 ++x, ++cur_ware)
-		{
-			Widelands::Item_Ware_Descr const & ware =
-				*tribe.get_ware_descr(Widelands::Ware_Index(cur_ware));
-			WSM_Checkbox & cb =
-				*new WSM_Checkbox
-					(this, pos, cur_ware, ware.icon(), colors[cur_ware]);
-			cb.set_tooltip(ware.descname().c_str());
-			cb.changedtoid.set(this, &Ware_Statistics_Menu::cb_changed_to);
-			pos.x += cb.get_w() + spacing;
-			dposy = cb.get_h() + spacing;
-			set_inner_size
-				(spacing + (cb.get_w() + spacing) * wares_per_row, get_inner_h());
-			m_plot->register_plot_data
-				(cur_ware,
-				 parent.get_player()->get_ware_production_statistics
-				 	(Widelands::Ware_Index(cur_ware)),
-				 colors[cur_ware]);
-		}
-		pos.y += dposy;
+public:
+	StatisticWaresDisplay(UI::Panel* const parent,
+	                      int32_t const x,
+	                      int32_t const y,
+	                      const Widelands::TribeDescr& tribe,
+	                      boost::function<void(Widelands::DescriptionIndex, bool)> callback_function,
+	                      std::vector<uint8_t>& color_map)
+	   : AbstractWaresDisplay(parent, x, y, tribe, Widelands::wwWARE, true, callback_function),
+	     color_map_(color_map) {
+		int w, h;
+		get_desired_size(&w, &h);
+		set_size(w, h);
 	}
 
-	m_plot->set_size(get_inner_w() - 2 * spacing, PLOT_HEIGHT);
+protected:
+	std::string info_for_ware(Widelands::DescriptionIndex const /* ware */) override {
+		return "";
+	}
 
+	RGBColor info_color_for_ware(Widelands::DescriptionIndex const ware) override {
+		size_t index = static_cast<size_t>(ware);
 
-	int32_t button_size = (get_inner_w() - spacing * 5) / 4;
-	pos.x  = spacing;
-	pos.y += spacing + spacing;
+		return colors[color_map_[index]];
+	}
+};
 
-	new UI::Callback_Button
-		(this, "15m",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_15_MINS),
-		 _("15 m"));
+WareStatisticsMenu::WareStatisticsMenu(InteractivePlayer& parent,
+                                       UI::UniqueWindow::Registry& registry)
+   : UI::UniqueWindow(&parent,
+                      "ware_statistics",
+                      &registry,
+                      kPlotWidth + 2 * kSpacing,
+                      270,
+                      _("Ware Statistics")),
+     main_box_(nullptr),
+     tab_panel_(nullptr),
+     display_(nullptr),
+     slider_(nullptr) {
+	uint8_t const nr_wares = parent.get_player()->egbase().tribes().nrwares();
 
-	pos.x += button_size + spacing;
+	// Init color sets
+	color_map_.resize(nr_wares);
+	std::fill(color_map_.begin(), color_map_.end(), kInactiveColorIndex);
+	active_colors_.resize(colors_length);
+	std::fill(active_colors_.begin(), active_colors_.end(), 0);
 
-	new UI::Callback_Button
-		(this, "30m",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_30_MINS),
-		 _("30 m"));
+	//  First, we must decide about the size.
+	main_box_ = new UI::Box(this, 0, 0, UI::Box::Vertical, 0, 0, 5);
+	main_box_->set_border(kSpacing, kSpacing, kSpacing, kSpacing);
+	set_center_panel(main_box_);
 
-	pos.x += button_size + spacing;
+	// Setup plot widgets
+	// Create a tabbed environment for the different plots
+	tab_panel_ = new UI::TabPanel(main_box_, UI::TabPanelStyle::kWuiDark);
 
-	new UI::Callback_Button
-		(this, "1h",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_ONE_HOUR),
-		 _("1 h"));
+	plot_production_ =
+	   new WuiPlotArea(tab_panel_, 0, 0, kPlotWidth, kPlotHeight + kSpacing,
+	                   Widelands::kStatisticsSampleTime, WuiPlotArea::Plotmode::kRelative);
 
-	pos.x += button_size + spacing;
+	tab_panel_->add(
+	   "production", g_gr->images().get(pic_tab_production), plot_production_, _("Production"));
 
-	new UI::Callback_Button
-		(this, "2h",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_TWO_HOURS),
-		 _("2 h"));
+	plot_consumption_ =
+	   new WuiPlotArea(tab_panel_, 0, 0, kPlotWidth, kPlotHeight + kSpacing,
+	                   Widelands::kStatisticsSampleTime, WuiPlotArea::Plotmode::kRelative);
 
-	pos.y += 25 + spacing;
-	pos.x  =      spacing;
+	tab_panel_->add(
+	   "consumption", g_gr->images().get(pic_tab_consumption), plot_consumption_, _("Consumption"));
 
-	new UI::Callback_Button
-		(this, "help",
-		 pos.x, pos.y, 32, 32,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 g_gr->get_picture(PicMod_Game, "pics/menu_help.png"),
-		 boost::bind(&Ware_Statistics_Menu::clicked_help, boost::ref(*this)),
-		 _("Help"));
+	plot_economy_ =
+	   new DifferentialPlotArea(tab_panel_, 0, 0, kPlotWidth, kPlotHeight + kSpacing,
+	                            Widelands::kStatisticsSampleTime, WuiPlotArea::Plotmode::kRelative);
 
-	pos.x += button_size + spacing;
+	tab_panel_->add(
+	   "economy_health", g_gr->images().get(pic_tab_economy), plot_economy_, _("Economy health"));
 
-	new UI::Callback_Button
-		(this, "4h",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_FOUR_HOURS),
-		 _("4 h"));
+	plot_stock_ =
+	   new WuiPlotArea(tab_panel_, 0, 0, kPlotWidth, kPlotHeight + kSpacing,
+	                   Widelands::kStatisticsSampleTime, WuiPlotArea::Plotmode::kAbsolute);
 
-	pos.x += button_size + spacing;
+	tab_panel_->add("stock", g_gr->images().get(pic_tab_stock), plot_stock_, _("Stock"));
 
-	new UI::Callback_Button
-		(this, "8h",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_EIGHT_HOURS),
-		 _("8 h"));
+	tab_panel_->activate(0);
 
-	pos.x += button_size + spacing;
+	// Add tabbed environment to box
+	main_box_->add(tab_panel_, UI::Box::Resizing::kFullSize);
 
-	new UI::Callback_Button
-		(this, "16h",
-		 pos.x, pos.y, button_size, 25,
-		 g_gr->get_picture(PicMod_UI, "pics/but4.png"),
-		 boost::bind(&WUIPlot_Area::set_time, boost::ref(*m_plot), WUIPlot_Area::TIME_16_HOURS),
-		 _("16 h"));
+	// Register statistics data
+	for (Widelands::DescriptionIndex cur_ware = 0; cur_ware < nr_wares; ++cur_ware) {
+		plot_production_->register_plot_data(
+		   cur_ware,
+		   parent.get_player()->get_ware_production_statistics(Widelands::DescriptionIndex(cur_ware)),
+		   colors[kInactiveColorIndex]);
 
-	pos += Point(button_size + spacing, 32 + spacing);
+		plot_consumption_->register_plot_data(cur_ware,
+		                                      parent.get_player()->get_ware_consumption_statistics(
+		                                         Widelands::DescriptionIndex(cur_ware)),
+		                                      colors[kInactiveColorIndex]);
 
-	set_inner_size(get_inner_w(), pos.y);
+		plot_economy_->register_plot_data(
+		   cur_ware,
+		   parent.get_player()->get_ware_production_statistics(Widelands::DescriptionIndex(cur_ware)),
+		   colors[kInactiveColorIndex]);
+
+		plot_economy_->register_negative_plot_data(
+		   cur_ware, parent.get_player()->get_ware_consumption_statistics(
+		                Widelands::DescriptionIndex(cur_ware)));
+
+		plot_stock_->register_plot_data(
+		   cur_ware,
+		   parent.get_player()->get_ware_stock_statistics(Widelands::DescriptionIndex(cur_ware)),
+		   colors[kInactiveColorIndex]);
+	}
+
+	display_ = new StatisticWaresDisplay(
+	   main_box_, 0, 0, parent.get_player()->tribe(),
+	   [this](const int ware_index, const bool what) { cb_changed_to(ware_index, what); },
+	   color_map_);
+	display_->set_min_free_vertical_space(400);
+	main_box_->add(display_, UI::Box::Resizing::kFullSize);
+
+	slider_ = new WuiPlotAreaSlider(this, *plot_production_, 0, 0, kPlotWidth, 45);
+	slider_->changedto.connect([this](const int32_t timescale) { set_time(timescale); });
+	main_box_->add(slider_, UI::Box::Resizing::kFullSize);
 }
 
+/**
+ * Callback for the ware buttons. Change the state of all ware statistics
+ * simultaneously.
+ */
+void WareStatisticsMenu::cb_changed_to(Widelands::DescriptionIndex id, bool what) {
+	if (what) {  // Activate ware
+		// Search lowest free color
+		uint8_t color_index = kInactiveColorIndex;
+
+		for (uint32_t i = 0; i < active_colors_.size(); ++i) {
+			if (!active_colors_[i]) {
+				// Prevent index out of bounds
+				color_index = std::min(i + 1, colors_length - 1);
+				active_colors_[i] = true;
+				break;
+			}
+		}
+
+		// Assign color
+		color_map_[static_cast<size_t>(id)] = color_index;
+		plot_production_->set_plotcolor(static_cast<size_t>(id), colors[color_index]);
+		plot_consumption_->set_plotcolor(static_cast<size_t>(id), colors[color_index]);
+		plot_economy_->set_plotcolor(static_cast<size_t>(id), colors[color_index]);
+		plot_stock_->set_plotcolor(static_cast<size_t>(id), colors[color_index]);
+
+	} else {  // Deactivate ware
+		uint8_t old_color = color_map_[static_cast<size_t>(id)];
+		if (old_color != kInactiveColorIndex) {
+			active_colors_[old_color - 1] = false;
+			color_map_[static_cast<size_t>(id)] = kInactiveColorIndex;
+		}
+	}
+
+	plot_production_->show_plot(static_cast<size_t>(id), what);
+	plot_consumption_->show_plot(static_cast<size_t>(id), what);
+	plot_economy_->show_plot(static_cast<size_t>(id), what);
+	plot_stock_->show_plot(static_cast<size_t>(id), what);
+}
+
+static bool layouting = false;
+void WareStatisticsMenu::layout() {
+	if (layouting || !tab_panel_ || !display_ || !slider_ || !main_box_) {
+		return;
+	}
+	layouting = true;
+
+	display_->set_hgap(3, false);
+	int w1, h1, w2, h2, w3, h3;
+	tab_panel_->get_desired_size(&w1, &h1);
+	display_->get_desired_size(&w2, &h2);
+	slider_->get_desired_size(&w3, &h3);
+
+	display_->set_hgap(
+	   std::max(3, AbstractWaresDisplay::calc_hgap(display_->get_extent().w, kPlotWidth)), false);
+	display_->get_desired_size(&w2, &h2);
+
+	main_box_->set_desired_size(
+	   std::max(w2, kPlotWidth) + 2 * kSpacing, h1 + h2 + h3 + text_height(UI::FontStyle::kLabel));
+	UI::UniqueWindow::layout();
+	layouting = false;
+}
 
 /**
- * Called when the ok button has been clicked
- * \todo Implement help
-*/
-void Ware_Statistics_Menu::clicked_help() {}
-
-/*
- * Cb has been changed to this state
+ * Callback for the time buttons. Change the time axis of all ware
+ * statistics simultaneously.
  */
-void Ware_Statistics_Menu::cb_changed_to(int32_t const id, bool const what) {
-	m_plot->show_plot(id, what);
+void WareStatisticsMenu::set_time(int32_t timescale) {
+	plot_production_->set_time_id(timescale);
+	plot_consumption_->set_time_id(timescale);
+	plot_economy_->set_time_id(timescale);
+	plot_stock_->set_time_id(timescale);
 }

@@ -2,8 +2,8 @@
 # encoding: utf-8
 #
 
+import sys
 import unittest
-import new
 
 from CodeCheck import CodeChecker, Preprocessor
 
@@ -14,7 +14,7 @@ class RuleTest(unittest.TestCase):
         self.preprocessor = Preprocessor()
         self.c = checker
         self.tv = val
-        
+
     def runTest(self):
         self.rv = self.c.check_text(self.preprocessor, "testdir/test.h", self.tv)
         self._do_test()
@@ -35,7 +35,7 @@ class ForbiddenTest(RuleTest):
     def _do_test(self):
         self.assertTrue( len(self.rv)!=0,
             "Rule '%s' failed. Example '%s' should fail, but passed" % (self.c.name,self.tv) )
-        
+
 def _make_tests_from_checker( c ):
     """
     Takes a checker class and turns it's allowed and forbidden variables into
@@ -46,13 +46,48 @@ def _make_tests_from_checker( c ):
 
     return allowed_tests + forbidden_tests
 
+class CommentsTest(unittest.TestCase):
+    """
+    Tests that comment stripping is working correctly
+    """
+    def __init__(self, before, after):
+        unittest.TestCase.__init__(self)
+        self.before = before
+        self.after = after
+
+    def runTest(self):
+        preprocessor = Preprocessor()
+        after = preprocessor.get_preprocessed_data("test", self.before, True, False)
+        self.assertTrue(after == self.after,
+            "Stripping comments from %r failed. Expected %r, got %r"
+            % (self.before, self.after, after)
+            )
+
+comment_tests = [
+    # Let's get the basics right.
+    ("a b c",
+     "a b c"),
+    # Whitespace before comments should be stripped
+    ("a b c       // a",
+     "a b c"),
+    # Single line comment shouldn't affect the next line
+    ("a b c       // a\nd e",
+     "a b c\nd e"),
+    # Multi-line comments should retain original line numbering
+    ("a /* \n b \n */ c",
+     "a \n\n c"),
+    # Multiple comments on one line should work
+    ("int32_t estimate(Map & /* map */, FCoords /* pos */) const {return 0;}\ntest",
+     "int32_t estimate(Map & "       ", FCoords "       ") const {return 0;}\ntest"),
+]
+
 if __name__ == '__main__':
     import sys
-    
+
     d = CodeChecker()
-    
+
     suite = unittest.TestSuite()
-    
+
     if len(sys.argv) > 1:
         for checker in (d._checkers):
             if checker.name in sys.argv:
@@ -61,4 +96,7 @@ if __name__ == '__main__':
         for checker in d._checkers:
             suite.addTests( _make_tests_from_checker(checker) )
 
-    unittest.TextTestRunner(verbosity=1).run(suite)
+    for before, after in comment_tests:
+        suite.addTest(CommentsTest(before, after.splitlines(True)))
+    success = unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful()
+    sys.exit(0 if success else 1)

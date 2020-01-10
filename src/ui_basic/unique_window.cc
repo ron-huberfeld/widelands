@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2007, 2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,11 +13,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "unique_window.h"
+#include "ui_basic/unique_window.h"
+
+#include <boost/bind.hpp>
 
 namespace UI {
 /*
@@ -30,87 +32,88 @@ UniqueWindow IMPLEMENTATION
 
 /**
  * Creates the window, if it does not exist.
-*/
+ */
 void UniqueWindow::Registry::create() {
-	if (not window) {
-		constr(*this);
+	if (!window) {
+		open_window();
+	} else {
+		if (window->is_minimal()) {
+			window->restore();
+		}
+		window->move_to_top();
 	}
 }
 
 /**
- * Destroys the window, if it eixsts.
-*/
+ * Destroys the window, if it exists.
+ */
 void UniqueWindow::Registry::destroy() {
 	if (window) {
-		delete window;
+		window->die();
 	}
 }
 
 /**
  * Either destroys or creates the window.
-*/
+ */
 void UniqueWindow::Registry::toggle() {
 	if (window) {
-		delete window;
+		// There is already a window. If it is minimal, restore it.
+		if (window->is_minimal()) {
+			window->restore();
+			opened();
+		} else {
+			// Delete rather than die() to make dropdown lists behave
+			delete window;
+		}
 	} else {
-		constr(*this);
+		open_window();
 	}
 }
-
-
 
 /**
  * In order to avoid dangling pointers, we need to kill our contained window
  * here.
-*/
-UniqueWindow::Registry::~Registry() {delete window;}
-
+ */
+UniqueWindow::Registry::~Registry() {
+	delete window;
+}
 
 /**
  * Register, position according to the registry information.
-*/
-UniqueWindow::UniqueWindow
-	(Panel                  * const parent,
-	 std::string const & name,
-	 UniqueWindow::Registry * const reg,
-	 int32_t const w, int32_t const h,
-	 std::string      const & title)
-	:
-	Window         (parent, name, 0, 0, w, h, title.c_str()),
-	m_registry     (reg),
-	m_usedefaultpos(true)
-{
-	if (m_registry) {
-		delete m_registry->window;
+ */
+UniqueWindow::UniqueWindow(Panel* const parent,
+                           const std::string& name,
+                           UniqueWindow::Registry* const reg,
+                           int32_t const w,
+                           int32_t const h,
+                           const std::string& title)
+   : Window(parent, name, 0, 0, w, h, title.c_str()), registry_(reg), usedefaultpos_(true) {
+	if (registry_) {
+		delete registry_->window;
 
-		m_registry->window = this;
-		if (m_registry->x >= 0) {
-			set_pos(Point(m_registry->x, m_registry->y));
-			m_usedefaultpos = false;
+		registry_->window = this;
+		if (registry_->valid_pos) {
+			set_pos(Vector2i(registry_->x, registry_->y));
+			usedefaultpos_ = false;
 		}
-		if (m_registry->onCreate) {
-			m_registry->onCreate();
-		}
+		registry_->opened();
 	}
 }
-
 
 /**
  * Unregister, save latest position.
-*/
-UniqueWindow::~UniqueWindow()
-{
-	if (m_registry) {
-		assert(m_registry->window == this);
+ */
+UniqueWindow::~UniqueWindow() {
+	if (registry_) {
+		assert(registry_->window == this);
 
-		m_registry->window = 0;
-		m_registry->x = get_x();
-		m_registry->y = get_y();
+		registry_->window = nullptr;
+		registry_->x = get_x();
+		registry_->y = get_y();
+		registry_->valid_pos = true;
 
-		if (m_registry->onDelete) {
-			m_registry->onDelete();
-		}
+		registry_->closed();
 	}
 }
-
-}
+}  // namespace UI

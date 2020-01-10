@@ -1,7 +1,0 @@
-help=_Gold ores are mined in gold mines and processed to gold in smelting works.
-
-preciousness=2
-
-[idle]
-pics=idle.png
-hotspot=4 4

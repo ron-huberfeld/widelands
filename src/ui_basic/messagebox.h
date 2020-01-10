@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006, 2008-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,72 +13,72 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_MESSAGEBOX_H
-#define UI_MESSAGEBOX_H
+#ifndef WL_UI_BASIC_MESSAGEBOX_H
+#define WL_UI_BASIC_MESSAGEBOX_H
 
-#include "align.h"
-#include "m_signal.h"
-#include "window.h"
+#include <memory>
 
-#include <boost/scoped_ptr.hpp>
+#include <boost/signals2.hpp>
+
+#include "graphic/align.h"
+#include "ui_basic/button.h"
+#include "ui_basic/multilinetextarea.h"
+#include "ui_basic/window.h"
 
 namespace UI {
 
-struct WLMessageBoxImpl;
-
 /**
- * Shows a standard messagebox. The message box can be used either as a modal
- * or as a non-modal dialog box.
+ * Shows a standard messagebox.
+ *
+ * The message box can be used either as a modal or as a non-modal dialog box.
  *
  * Using it as a modal dialog box is very straightforward:
- *     WLMessageBox mb(parent, "Caption", "Text", OK);
- *     int32_t code = mb.run();
- * The return code is 1 if the "Yes" button has been pressed in a \ref YESNO
- * dialog box. Otherwise, it is 0 (or negative, if the modal messagebox has
+ *     WLMessageBox mb(parent, "Title", "Text", MBoxType::kOK);
+ *     UI::Panel::Returncodes code = mb.run<UI::Panel::Returncodes>();
+ * The return code is kOk if the "OK" button has been pressed in a \ref MBoxType::kOkCancel
+ * dialog box. Otherwise, it is kBack (or negative, if the modal messagebox has
  * been interrupted in an unusual way).
  *
  * Using it as a non-modal dialog box is slightly more complicated. You have
  * to add this dialog box as a child to the current fullscreen panel, and
- * connect the signals \ref yes and \ref no or \ref ok, depending on the
+ * connect the signals \ref ok and \ref cancel or \ref ok, depending on the
  * messagebox type, to a function that deletes the message box.
  * \note this function is named "WLMessageBox" instead of simply "MessageBox"
  *       because else linking on Windows (even with #undef MessageBox) will
  *       not work.
-*/
+ *
+ * Text conventions: Title Case for the 'caption', Sentence case for the 'text'
+ */
 struct WLMessageBox : public Window {
-	enum MB_Type {
-		OK,
-		YESNO
-	};
-	WLMessageBox
-		(Panel * parent,
-		 const std::string & caption,
-		 const std::string & text,
-		 MB_Type);
-	~WLMessageBox();
+	enum class MBoxType { kOk, kOkCancel };
+	WLMessageBox(Panel* parent,
+	             const std::string& caption,
+	             const std::string& text,
+	             MBoxType,
+	             Align = UI::Align::kCenter);
 
-	Signal ok;
-	Signal yes;
-	Signal no;
+	boost::signals2::signal<void()> ok;
+	boost::signals2::signal<void()> cancel;
 
-	void set_align(Align);
+	bool handle_mousepress(uint8_t btn, int32_t mx, int32_t my) override;
+	bool handle_mouserelease(uint8_t btn, int32_t mx, int32_t my) override;
 
-	bool handle_mousepress  (Uint8 btn, int32_t mx, int32_t my);
-	bool handle_mouserelease(Uint8 btn, int32_t mx, int32_t my);
+	/// Handle keypresses
+	bool handle_key(bool down, SDL_Keysym code) override;
 
 protected:
-	virtual void pressedOk();
-	virtual void pressedYes();
-	virtual void pressedNo();
+	virtual void clicked_ok();
+	virtual void clicked_back();
 
 private:
-	boost::scoped_ptr<WLMessageBoxImpl> d;
+	MBoxType type_;
+	std::unique_ptr<Button> ok_button_, cancel_button_;
+	std::unique_ptr<MultilineTextarea> textarea_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_MESSAGEBOX_H

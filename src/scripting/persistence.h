@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,39 +13,36 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef PERSISTENCE_H
-#define PERSISTENCE_H
+#ifndef WL_SCRIPTING_PERSISTENCE_H
+#define WL_SCRIPTING_PERSISTENCE_H
 
 #include <string>
 
-#include "logic/widelands_filewrite.h"
-#include "logic/widelands_fileread.h"
+#include "scripting/lua.h"
+
+class FileRead;
+class FileWrite;
 
 namespace Widelands {
-	struct Map_Map_Object_Loader;
-	struct Map_Map_Object_Saver;
-	struct Editor_Game_Base;
-	struct Game;
-}
-
-#include <lua.hpp>
+class MapObjectLoader;
+struct MapObjectSaver;
+class EditorGameBase;
+class Game;
+}  // namespace Widelands
 
 /**
  * This persists the lua object at the stack position
  * 2 after populating the (empty) table at position 1
  * with the items given in globals.
  */
-uint32_t persist_object
-	(lua_State * L,
-	 Widelands::FileWrite &, Widelands::Map_Map_Object_Saver &);
-uint32_t unpersist_object
-	(lua_State * L,
-	 Widelands::FileRead & fr, Widelands::Map_Map_Object_Loader & mol,
-	 uint32_t size);
+uint32_t persist_object(lua_State* L, FileWrite&, Widelands::MapObjectSaver&);
 
-#endif /* end of include guard: PERSISTENCE_H */
+// Does all the unpersisting work. The unpersisted object is at the top of the
+// stack after the function returns.
+void unpersist_object(lua_State* L, FileRead& fr, Widelands::MapObjectLoader& mol, uint32_t size);
 
+#endif  // end of include guard: WL_SCRIPTING_PERSISTENCE_H

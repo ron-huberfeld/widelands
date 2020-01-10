@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-# encoding: utf-8
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 #
 
 """
@@ -14,8 +14,26 @@ with grep which is currently also around.
 from collections import defaultdict
 from glob import glob
 from time import time
+import io
 import os
 import re
+
+def strip_multi_line_c_comments(input_lines):
+    """
+    Remove multi-line C comments from a one-line-per-entry list of strings,
+    but preserve new lines so that line-numbering is not affected.
+    """
+    new_lines = "".join(input_lines)
+
+    def fixup(match):
+        "Remove everything except newlines"
+        orig_string = match.string[match.start():match.end()]
+        return "\n" * orig_string.count("\n")
+
+    # Strip multi-line c-style comments
+    new_lines = re.sub(r"/\*.*?\*/", fixup, new_lines, flags=re.DOTALL | re.M)
+
+    return new_lines.splitlines(True)
 
 class Preprocessor(object):
     """
@@ -55,39 +73,18 @@ $)
         if fn in self._stripped_comments_and_strings:
             return self._stripped_comments_and_strings[fn]
 
-        in_comment = False
         new_lines = []
         for line in lines:
             # Strings are replaced with blanks
             line = self._literal_chars.sub(lambda k: "'%s'" % ((len(k.group(0))-2)*" "),line)
             line = self._literal_strings.sub(lambda k: '"%s"' % ((len(k.group(0))-2)*" "),line)
 
-            # Strip comments and strings
-            # Multiline comments
-            start_idx = line.find('/*')
-            if not in_comment:
-                if start_idx != -1:
-                    stop_idx = line.find("*/",start_idx+2)
-                    if stop_idx != -1:
-                        line = line[:start_idx] + line[stop_idx+2:]
-                    else:
-                        line = line[:start_idx].strip()
-                        in_comment = True
-
-            if in_comment:
-                stop_idx = line.find('*/')
-                if stop_idx == -1:
-                    line = ""
-                else:
-                    line = line[stop_idx+2:].strip()
-                    in_comment = False
-
-            # Single line comments
-            idx = line.find('//')
-            if idx != -1:
-                line = line[:idx].strip()
+            # Remove whitespace followed by single-line comment (old behaviour)
+            line = re.sub(r"\s*//.*$", "", line)
 
             new_lines.append( line )
+
+        new_lines = strip_multi_line_c_comments(new_lines)
 
         self._stripped_comments_and_strings[fn] = new_lines
 
@@ -131,7 +128,7 @@ $)
             return self._get_stripped_macros(fn,self._get_stripped_comments_and_strings(fn,self._get_plain(fn,data)))
 
         # Error checking, we should never be here
-        raise RuntimeError, "strip_macros can't be true when strip_strings_and_comments isn't!"
+        raise RuntimeError("strip_macros can't be true when strip_strings_and_comments isn't!")
 
 
 class CheckingRule(object):
@@ -202,7 +199,9 @@ def _parse_rules():
 
     for filename in rule_files:
         variables = {}
-        execfile(filename,variables)
+        fh = open(filename, "r")
+        exec(fh.read()+"\n", variables)
+        fh.close()
 
         rule = CheckingRule(os.path.basename(filename), variables)
         checkers.append( rule )
@@ -274,39 +273,39 @@ class CodeChecker(object):
 
             output += "%s:%s: %s\n" % (fn,l,msg)
 
-        print output.rstrip()
+        print(output.rstrip())
 
         return output
 
     def check_file(self,fn, print_errors = True):
         if print_errors and fn in self._cache:
-            print self._cache[fn].rstrip()
+            print(self._cache[fn].rstrip())
             return
         errors = []
 
-        bm = defaultdict(lambda: 0.)
+        benchmark_results = defaultdict(lambda: 0.)
 
         preprocessor = Preprocessor()
 
         # Check line by line (currently)
-        data = open(fn).read()
-        for c in self._checkers:
-            if self._benchmark:
-                start = time()
-                e =  c.check_text( preprocessor, fn, data )
-                errors.extend( e )
-                bm[c.name] += time()-start
-            else:
-                e =  c.check_text( preprocessor, fn, data )
-                errors.extend( e )
-
+        with io.open(fn, "r", newline='', encoding='utf-8') as file:
+            data = file.read()
+            for c in self._checkers:
+                if self._benchmark:
+                    start = time()
+                    e =  c.check_text( preprocessor, fn, data )
+                    errors.extend( e )
+                    benchmark_results[c.name] += time()-start
+                else:
+                    e =  c.check_text( preprocessor, fn, data )
+                    errors.extend( e )
         errors.sort(key=lambda a: a[1])
 
         if len(errors) and print_errors:
             self._cache[fn] = self._print_errors(errors)
 
         if self._benchmark:
-            self._bench_results = [ (v,k) for k,v in bm.items() ]
+            self._bench_results = [ (v,k) for k,v in benchmark_results.items() ]
             self._bench_results.sort(reverse=True)
 
         return errors
@@ -318,24 +317,22 @@ if __name__ == '__main__':
     import getopt
 
     def usage():
-        print "Usage: %s <options> <files>" % os.path.basename(sys.argv[0])
-        print """
+        print("Usage: %s <options> <files>" % os.path.basename(sys.argv[0]))
+        print("""
  -h,   --help            Print help and exit
  -c,   --color           Print warnings in color
  -b,   --benchmark       Benchmark each rule
  -p,   --profile         Run with cProfile. Creates "Profile.prof" file
-"""
+""")
 
     def check_files(files,color,benchmark):
         d = CodeChecker( benchmark = benchmark, color = color )
         for filename in files:
-#            print "Checking %s ..." % filename
             errors = d.check_file(filename)
 
         # Print benchmark results
         if benchmark:
-            print
-            print "Benchmark results:"
+            print("\nBenchmark results:")
 
             res = d.benchmark_results
             ctime = sum( l[0] for l in res )
@@ -344,10 +341,10 @@ if __name__ == '__main__':
                 per = time/ctime * 100.
                 percentage = ("%.2f%%"% per).rjust(8)
                 time = ("%4.2fms"% (time*1000.)).rjust(8)
-                print "%s %s    %s" % (percentage,time,n)
+                print("%s %s    %s" % (percentage,time,n))
 
     def main():
-        opts, files = getopt.getopt(sys.argv[1:], "hbcp", ["help", "benchmark","color", "colour", "profile"])
+        opts, given_paths = getopt.getopt(sys.argv[1:], "hbcp", ["help", "benchmark","color", "colour", "profile"])
 
         benchmark = False
         color = False
@@ -365,15 +362,30 @@ if __name__ == '__main__':
             if o in ('-p','--profile'):
                 profile = True
 
-        if not len(files):
+        if not len(given_paths):
             usage()
             sys.exit(0)
 
+        given_paths = set(given_paths)
+        files = set()
+        for f in given_paths:
+            if os.path.isdir(f):
+                for (dirpath, dirnames, filenames) in os.walk(f):
+                    for fn in filenames:
+                        files.add(os.path.abspath(os.path.join(dirpath, fn)))
+                continue
+            files.add(os.path.abspath(f))
+
+        source_files = []
+        for f in files:
+            extension = os.path.splitext(f)[-1].lower()
+            if extension in ('.cc', '.h'):
+                source_files.append(f)
+
         if profile:
             import cProfile
-            cProfile.runctx("check_files(files,color,benchmark)",globals(),locals(),"Profile.prof")
+            cProfile.runctx("check_files(source_files,color,benchmark)",globals(),locals(),"Profile.prof")
         else:
-            check_files(files,color,benchmark)
+            check_files(source_files,color,benchmark)
 
     main()
-

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006, 2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,56 +13,55 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_MULTIPLAYER_H
-#define FULLSCREEN_MENU_MULTIPLAYER_H
+#ifndef WL_UI_FSMENU_MULTIPLAYER_H
+#define WL_UI_FSMENU_MULTIPLAYER_H
 
-#include "network/network_ggz.h"
-
-#if HAVE_GGZ
-
-#include "base.h"
-
+#include "network/internet_gaming.h"
 #include "ui_basic/button.h"
 #include "ui_basic/textarea.h"
+#include "ui_fsmenu/main_menu.h"
 
 /**
  * Fullscreen Menu for MultiPlayer.
  * Here you select what game you want to play.
  */
-struct Fullscreen_Menu_MultiPlayer : public Fullscreen_Menu_Base {
-	Fullscreen_Menu_MultiPlayer();
+class FullscreenMenuMultiPlayer : public FullscreenMenuMainMenu {
+public:
+	FullscreenMenuMultiPlayer();
 
-	enum {Back = dying_code, Metaserver, Lan};
+	void show_internet_login();
+	void internet_login();
+	std::string get_nickname() {
+		return nickname_;
+	}
+	std::string get_password() {
+		return password_;
+	}
+	bool registered() {
+		return register_;
+	}
 
-	void showGGZLogin();
-	void ggzLogin();
-	std::string get_nickname() {return m_nickname;}
-	std::string get_password() {return m_password;}
-	bool registered()          {return m_register;}
+protected:
+	void clicked_ok() override;
 
 private:
-	uint32_t                                            m_butw;
-	uint32_t                                            m_buth;
-	uint32_t                                            m_butx;
-	uint32_t                                            m_fs;
-	std::string                                         m_fn;
-	UI::Textarea                                        title;
-	UI::Callback_Button                             metaserver;
-	UI::Callback_Button                           * showloginbox;
-	UI::Callback_Button                             lan;
-	UI::Callback_Button                             back;
+	void layout() override;
 
-	// Values from ggz login window
-	std::string m_nickname;
-	std::string m_password;
-	bool        m_register;
-	bool        m_auto_log;
+	UI::Textarea title;
+	UI::Button metaserver;
+	UI::Button lan;
+	UI::Button showloginbox;
+	UI::Button back;
+
+	// Values from internet login window
+	std::string nickname_;
+	std::string password_;
+	bool auto_log_;
+	bool register_;
 };
 
-#endif // if HAVE_GGZ
-
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_MULTIPLAYER_H

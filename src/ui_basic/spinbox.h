@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 by the Widelands Development Team
+ * Copyright (C) 2009-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,59 +13,90 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_SPINBOX_H
-#define UI_SPINBOX_H
+#ifndef WL_UI_BASIC_SPINBOX_H
+#define WL_UI_BASIC_SPINBOX_H
 
-#include "align.h"
-#include "button.h"
-#include "graphic/graphic.h"
 #include <cstring>
+#include <list>
+
+#include <boost/signals2.hpp>
+
+#include "graphic/align.h"
+#include "ui_basic/box.h"
+#include "ui_basic/button.h"
 
 namespace UI {
 
 struct SpinBoxImpl;
-struct IntValueTextReplacement;
-struct TextStyle;
 
 /// A spinbox is an UI element for setting the integer value of a variable.
-struct SpinBox : public Panel {
-	SpinBox
-		(Panel *,
-		 int32_t x, int32_t y, uint32_t w, uint32_t h,
-		 int32_t startval, int32_t minval, int32_t maxval,
-		 std::string const & unit             = std::string(),
-		 PictureID           buttonbackground =
-		 	g_gr->get_picture(PicMod_UI, "pics/but2.png"),
-		 bool big = false,
-		 Align align = Align_Center);
+/// w is the overall width of the SpinBox and must be wide enough to fit 2 labels and the buttons.
+/// unit_w is the width alotted for all buttons and the text between them (the actual spinbox).
+/// label_text is a text that precedes the actual spinbox.
+class SpinBox : public Panel {
+public:
+	enum class Type {
+		kSmall,     // Displays buttons for small steps
+		kBig,       // Displays buttons for small and big steps
+		kValueList  // Uses the values that are set by set_value_list().
+	};
 
-	void setValue(int32_t);
-	void setInterval(int32_t min, int32_t max);
-	void setUnit(std::string const &);
-	int32_t getValue();
-	std::string getUnit();
-	Align align() const;
-	void setAlign(Align);
-	void set_font(std::string const &, int32_t, RGBColor);
-	void set_textstyle(const TextStyle & style);
-	void add_replacement(int32_t, std::string);
-	void remove_replacement(int32_t);
-	bool has_replacement(int32_t);
+	enum class Units { kNone, kPixels, kMinutes, kPercent, kFields };
+
+	/**
+	 * Text conventions: Sentence case for the 'label_text' and for all values
+	 */
+	SpinBox(Panel*,
+	        int32_t x,
+	        int32_t y,
+	        uint32_t w,
+	        uint32_t unit_w,
+	        int32_t startval,
+	        int32_t minval,
+	        int32_t maxval,
+	        UI::PanelStyle style,
+	        const std::string& label_text = std::string(),
+	        const Units& unit = Units::kNone,
+	        SpinBox::Type = SpinBox::Type::kSmall,
+	        // The amount by which units are increased/decreased for small and big steps when a
+	        // button is pressed.
+	        int32_t step_size = 1,
+	        int32_t big_step_size = 10);
+	~SpinBox() override;
+
+	boost::signals2::signal<void()> changed;
+
+	void set_value(int32_t);
+	// For spinboxes of type kValueList. The vector needs to be sorted in ascending order,
+	// otherwise you will confuse the user.
+	void set_value_list(const std::vector<int32_t>&);
+	void set_interval(int32_t min, int32_t max);
+	int32_t get_value() const;
+	void add_replacement(int32_t, const std::string&);
+	const std::vector<UI::Button*>& get_buttons() {
+		return buttons_;
+	}
+	void set_unit_width(uint32_t width);
 
 private:
+	void layout() override;
 	void update();
-	void changeValue(int32_t);
-	int32_t findReplacement(int32_t value);
+	void change_value(int32_t);
+	const std::string unit_text(int32_t value) const;
 
-	const bool  m_big;
-
-	SpinBoxImpl * sbi;
+	const SpinBox::Type type_;
+	SpinBoxImpl* sbi_;
+	std::vector<UI::Button*> buttons_;
+	UI::Box* box_;
+	uint32_t unit_width_;
+	uint32_t button_height_;
+	uint32_t padding_;
+	uint32_t number_of_paddings_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_SPINBOX_H

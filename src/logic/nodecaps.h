@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,12 +13,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef NODECAPS_H
-#define NODECAPS_H
+#ifndef WL_LOGIC_NODECAPS_H
+#define WL_LOGIC_NODECAPS_H
 
 namespace Widelands {
 
@@ -38,28 +38,27 @@ enum NodeCaps {
 	 * size!)*/
 	BUILDCAPS_MINE = 8,
 
-	/** (only if BUILDCAPS_BIG): can we build a harbour on this field?  this
-	 * should be automatically set for BUILDCAPS_BIG fields that have a
+	/** (only if BUILDCAPS_BIG): can we build a port on this field? This gets set
+	 * for BUILDCAPS_BIG fields that have a Map::is_port_space() as well as a
 	 * swimmable second-order neighbour
 	 */
 	BUILDCAPS_PORT = 16,
 
 	/** can we build any building on this field?*/
-	BUILDCAPS_BUILDINGMASK = BUILDCAPS_SIZEMASK|BUILDCAPS_MINE|BUILDCAPS_PORT,
+	BUILDCAPS_BUILDINGMASK = BUILDCAPS_SIZEMASK | BUILDCAPS_MINE | BUILDCAPS_PORT,
 
-	/// Can Map_Objects walk or swim here? Also used for
-	/// Map_Object_Descr::movecaps. If MOVECAPS_WALK, any walking being can walk
+	/// Can MapObjects walk or swim here? Also used for
+	/// MapObjectDescr::movecaps. If MOVECAPS_WALK, any walking being can walk
 	/// to this field.
 	MOVECAPS_WALK = 32,
 
 	/// If MOVECAPS_SWIM, any swimming being (including ships) can go there.
 	/// Additionally, swimming beings can temporarily visit nodes that are
 	/// walkable but not swimmable if those nodes are at the start or end of
-	/// their path. Without this clause, harbours would be kind of impossible ;)
+	/// their path. Without this clause, ports would be kind of impossible ;)
 	/// This clause stops ducks from "swimwalking" along the coast.
 	MOVECAPS_SWIM = 64,
 };
-
 }
 
-#endif
+#endif  // end of include guard: WL_LOGIC_NODECAPS_H

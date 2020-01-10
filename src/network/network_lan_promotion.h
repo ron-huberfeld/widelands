@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007-2008 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,92 +13,176 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef NETWORK_LAN_PROMOTION_H
-#define NETWORK_LAN_PROMOTION_H
-
-#include "network_system.h"
+#ifndef WL_NETWORK_NETWORK_LAN_PROMOTION_H
+#define WL_NETWORK_NETWORK_LAN_PROMOTION_H
 
 #include <list>
+#include <memory>
+#include <set>
 
-#include <sys/types.h>
+#include "network/network.h"
 
 #define LAN_PROMOTION_PROTOCOL_VERSION 1
 
-#define LAN_GAME_CLOSED                0
-#define LAN_GAME_OPEN                  1
+#define LAN_GAME_CLOSED 0
+#define LAN_GAME_OPEN 1
 
-struct Net_Game_Info {
-	char          magic       [6];
+struct NetGameInfo {
+	char magic[6];
 	uint8_t version;
 	uint8_t state;
 
-	char          gameversion[32];
-	char          hostname   [128];
-	char          map        [32];
+	char gameversion[32];
+	char hostname[128];
+	char map[32];
 };
 
-struct Net_Open_Game {
-	in_addr_t     address;
-	in_port_t     port;
-	Net_Game_Info info;
+struct NetOpenGame {
+	NetOpenGame() = default;
+	explicit NetOpenGame(NetAddress init_address, NetGameInfo init_info)
+	   : address(init_address), info(init_info) {
+	}
+	NetAddress address;
+	NetGameInfo info;
 };
 
-struct LAN_Base {
+/**
+ * Base class for UDP networking.
+ * This class is used by derived classes to find open games on the
+ * local network and to announce a just opened game on the local network.
+ * This class tries to create sockets for IPv4 and IPv6.
+ */
+struct LanBase {
 protected:
-	LAN_Base ();
-	~LAN_Base ();
+	/**
+	 * Tries to start a socket on the given port.
+	 * Sockets for IPv4 and IPv6 are started.
+	 * When both fail, report_network_error() is called.
+	 * \param port The port to listen on.
+	 */
+	explicit LanBase(uint16_t port);
 
-	void bind (uint16_t);
+	~LanBase();
 
-	bool avail ();
+	/**
+	 * Returns whether data is available to be read.
+	 * \return \c True when receive() will return data, \c false otherwise.
+	 */
+	bool is_available();
 
-	ssize_t recv (void *, size_t, sockaddr_in *);
+	/**
+	 * Returns whether at least one of the sockets is open.
+	 * If this returns \c false, you probably have a problem.
+	 * \return \c True when a socket is ready, \c false otherwise.
+	 */
+	bool is_open();
 
-	void send (void const *, size_t, sockaddr_in const *);
-	void broadcast (void const *, size_t, uint16_t);
+	/**
+	 * Tries to receive some data.
+	 * \param[out] buf The buffer to read data into.
+	 * \param len The length of the buffer.
+	 * \param[out] addr The address we received data from. Since UDP is a connection-less
+	 *                  protocol, each receive() might receive data from another address.
+	 * \return How many bytes have been written to \c buf. If 0 is returned there either was no data
+	 *         available (check before with avail()) or there was some error (check with is_open())
+	 */
+	ssize_t receive(void* buf, size_t len, NetAddress* addr);
+
+	/**
+	 * Sends data to a specified address.
+	 * \param buf The data to send.
+	 * \param len The length of the buffer.
+	 * \param addr The address to send to.
+	 */
+	bool send(void const* buf, size_t len, const NetAddress& addr);
+
+	/**
+	 * Broadcast some data in the local network.
+	 * \param buf The data to send.
+	 * \param len The length of the buffer.
+	 * \param port The port to send to. No address is required.
+	 */
+	bool broadcast(void const* buf, size_t len, uint16_t port);
+
+	/**
+	 * Throws a WLWarning exception to jump back to the main menu.
+	 * Calling this on network errors is in the responsibility of derived classes.
+	 * (Most of the time, aborting makes sense when an error occurred. But e.g. in
+	 * the destructor simply ignoring the error is okay.)
+	 */
+	void report_network_error();
 
 private:
-	int32_t                  sock;
+	/**
+	 * Opens a listening UDP socket.
+	 * \param[out] The socket to open. The object has to be created but the socket not opened before.
+	 *             If it already has been opened before, nothing will be done.
+	 * \param version Whether a IPv4 or IPv6 socket should be opened.
+	 * \param port The port to listen on.
+	 */
+	void
+	start_socket(boost::asio::ip::udp::socket* socket, boost::asio::ip::udp version, uint16_t port);
 
-	std::list<in_addr_t> broadcast_addresses;
+	/**
+	 * Closes the given socket.
+	 * Does nothing if the socket already has been closed.
+	 * \param socket The socket to close.
+	 */
+	void close_socket(boost::asio::ip::udp::socket* socket);
+
+	/// No idea what this does. I think it is only really used when asynchronous operations are done.
+	boost::asio::io_service io_service;
+	/// The socket for IPv4.
+	boost::asio::ip::udp::socket socket_v4;
+	/// The socket for IPv6.
+	boost::asio::ip::udp::socket socket_v6;
+	/// The found broadcast addresses for IPv4.
+	/// No addresses for v6, there is only one fixed address.
+	std::set<std::string> broadcast_addresses_v4;
+#ifdef __APPLE__
+	/// Apple forces us to define which interface to broadcast through.
+	std::set<unsigned int> interface_indices_v6;
+#endif  // __APPLE__
 };
 
-struct LAN_Game_Promoter : public LAN_Base {
-	LAN_Game_Promoter ();
-	~LAN_Game_Promoter ();
+/**
+ * Used to promote opened games locally.
+ */
+struct LanGamePromoter : public LanBase {
+	LanGamePromoter();
+	~LanGamePromoter();
 
-	void run ();
+	void run();
 
-	void set_map (char const *);
+	void set_map(char const*);
 
 private:
-	Net_Game_Info gameinfo;
-	bool          needupdate;
+	NetGameInfo gameinfo;
+	bool needupdate;
 };
 
-struct LAN_Game_Finder:LAN_Base {
-	enum {
-		GameOpened,
-		GameClosed,
-		GameUpdated
-	};
+/**
+ * Used to listen for open games while in the LAN-screen.
+ */
+struct LanGameFinder : LanBase {
+	enum { GameOpened, GameClosed, GameUpdated };
 
-	LAN_Game_Finder ();
+	LanGameFinder();
 
-	void reset ();
-	void run ();
+	void reset();
+	void run();
 
-	void set_callback (void(*)(int32_t, Net_Open_Game const *, void *), void *);
+	void set_callback(void (*)(int32_t, const NetOpenGame* const, void*), void*);
 
 private:
-	std::list<Net_Open_Game *> opengames;
+	std::list<std::unique_ptr<NetOpenGame>> opengames;
 
-	void (*callback) (int32_t, Net_Open_Game const *, void *);
-	void                     * userdata;
+	void (*callback)(int32_t, const NetOpenGame* const, void*);
+	void* userdata;
 };
 
-#endif
+#endif  // end of include guard: WL_NETWORK_NETWORK_LAN_PROMOTION_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,40 +13,55 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GENERAL_STATISTICS_MENU_H
-#define GENERAL_STATISTICS_MENU_H
+#ifndef WL_WUI_GENERAL_STATISTICS_MENU_H
+#define WL_WUI_GENERAL_STATISTICS_MENU_H
 
-#include "constants.h"
-
-#include "plot_area.h"
-
+#include "graphic/playercolor.h"
+#include "ui_basic/box.h"
+#include "ui_basic/button.h"
 #include "ui_basic/radiobutton.h"
 #include "ui_basic/unique_window.h"
+#include "wui/plot_area.h"
 
-struct Interactive_GameBase;
+class InteractiveGameBase;
 namespace UI {
-struct Checkbox;
 struct Radiogroup;
 }
 
-struct General_Statistics_Menu : public UI::UniqueWindow {
-	General_Statistics_Menu
-		(Interactive_GameBase &, UI::UniqueWindow::Registry &);
+struct GeneralStatisticsMenu : public UI::UniqueWindow {
+
+	// Custom registry, to store the selected_information as well.
+	struct Registry : public UI::UniqueWindow::Registry {
+		Registry()
+		   : UI::UniqueWindow::Registry(),
+		     selected_information(0),
+		     selected_players(true, kMaxPlayers),
+		     time(WuiPlotArea::TIME_GAME) {
+		}
+
+		int32_t selected_information;
+		std::vector<bool> selected_players;
+		WuiPlotArea::TIME time;
+	};
+
+	GeneralStatisticsMenu(InteractiveGameBase&, Registry&);
+	virtual ~GeneralStatisticsMenu();
 
 private:
-	WUIPlot_Area         m_plot;
-	UI::Radiogroup       m_radiogroup;
-	int32_t              m_selected_information;
-	UI::Checkbox       * m_cbs[MAX_PLAYERS];
-	uint32_t             m_ndatasets;
+	Registry* my_registry_;
+	UI::Box box_;
+	WuiPlotArea plot_;
+	UI::Radiogroup radiogroup_;
+	int32_t selected_information_;
+	UI::Button* cbs_[kMaxPlayers];
+	uint32_t ndatasets_;
 
-	void clicked_help();
-	void cb_changed_to(int32_t, bool);
+	void cb_changed_to(int32_t);
 	void radiogroup_changed(int32_t);
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_GENERAL_STATISTICS_MENU_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2011 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,90 +13,52 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FONT_HANDLER_H
-#define FONT_HANDLER_H
+// TODO(unknown): rename
+#ifndef WL_GRAPHIC_FONT_HANDLER_H
+#define WL_GRAPHIC_FONT_HANDLER_H
 
-#include "ui_basic/align.h"
-#include "point.h"
-#include "rgbcolor.h"
-#include "graphic.h"
-#include "picture_id.h"
+#include <memory>
 
-#include <SDL_ttf.h>
-
-#include <boost/scoped_ptr.hpp>
-
-#include <list>
-#include <cstring>
-#include <vector>
-
-struct RenderTarget;
+#include "base/macros.h"
+#include "graphic/image_cache.h"
+#include "graphic/text/font_set.h"
+#include "graphic/text/rendered_text.h"
 
 namespace UI {
-
-struct TextStyle;
 
 /**
  * Main class for string rendering. Manages the cache of pre-rendered strings.
  */
-struct Font_Handler {
-	Font_Handler();
-	~Font_Handler();
+class IFontHandler {
+public:
+	IFontHandler() = default;
+	virtual ~IFontHandler() {
+	}
 
-	void draw_text
-		(RenderTarget &,
-		 const TextStyle &,
-		 Point dstpoint,
-		 const std::string & text,
-		 Align align = Align_CenterLeft,
-		 uint32_t caret = std::numeric_limits<uint32_t>::max());
-	uint32_t draw_text_raw(RenderTarget &, const TextStyle &, Point dstpoint, const std::string & text);
-	void draw_multiline
-		(RenderTarget &,
-		 const TextStyle &,
-		 Point dstpoint,
-		 const std::string & text,
-		 Align align = Align_CenterLeft,
-		 uint32_t wrap = std::numeric_limits<uint32_t>::max(),
-		 uint32_t caret = std::numeric_limits<uint32_t>::max());
+	/// Renders the given text into a set of images. The images are cached in a transient cache,
+	/// so we share the ownership. Will throw on error.
+	virtual std::shared_ptr<const UI::RenderedText> render(const std::string& text,
+	                                                       uint16_t w = 0) = 0;
 
-	void get_size
-		(const TextStyle &,
-		 const std::string & text,
-		 uint32_t & w, uint32_t & h,
-		 uint32_t wrap = std::numeric_limits<uint32_t>::max());
-	void get_size
-		(std::string const & fontname, int32_t size,
-		 const std::string & text,
-		 uint32_t & w, uint32_t & h,
-		 uint32_t wrap = std::numeric_limits<uint32_t>::max());
-	uint32_t get_fontheight(std::string const & name, int32_t size);
-	void do_align
-		(Align, int32_t & dstx, int32_t & dsty, int32_t w, int32_t h);
-	// This deletes all cached pictures, it is called
-	// from the graphics code before the graphics are flushed,
-	// to make sure that everything is forgotten
-	void flush_cache();
+	/// Returns the font handler's current FontSet
+	virtual UI::FontSet const* fontset() const = 0;
 
-private:
-	struct Data;
-	boost::scoped_ptr<Data> d;
+	/// Loads the FontSet for the currently active locale into the
+	/// font handler. This needs to be called after the language of the
+	/// game has changed.
+	virtual void reinitialize_fontset(const std::string& locale) = 0;
 
-private:
-	void draw_caret
-		(RenderTarget &,
-		 const TextStyle &,
-		 Point dstpoint,
-		 const std::string & text,
-		 uint32_t caret);
+	DISALLOW_COPY_AND_ASSIGN(IFontHandler);
 };
 
-extern Font_Handler * g_fh;
+/// Create a new FontHandler.
+IFontHandler* create_fonthandler(ImageCache* image_cache, const std::string& locale);
 
-}
+extern IFontHandler* g_fh;
+}  // namespace UI
 
-#endif
+#endif  // end of include guard: WL_GRAPHIC_FONT_HANDLER_H

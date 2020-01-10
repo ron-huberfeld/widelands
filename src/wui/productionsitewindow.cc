@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,146 +13,207 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "productionsitewindow.h"
+#include "wui/productionsitewindow.h"
 
+#include <boost/format.hpp>
+
+#include "economy/input_queue.h"
 #include "economy/request.h"
-#include "logic/constructionsite.h"
-#include "logic/militarysite.h"
-#include "logic/trainingsite.h"
-#include "logic/tribe.h"
-#include "logic/worker.h"
-#include "ui_basic/listselect.h"
-#include "ui_basic/tabpanel.h"
+#include "graphic/graphic.h"
+#include "logic/map_objects/tribes/tribe_descr.h"
+#include "logic/map_objects/tribes/worker.h"
 #include "ui_basic/textarea.h"
+#include "wui/inputqueuedisplay.h"
 
-using Widelands::ProductionSite;
-
-static char const * pic_tab_wares = "pics/menu_tab_wares.png";
-static char const * pic_tab_workers = "pics/menu_list_workers.png";
+static char const* pic_tab_wares = "images/wui/buildings/menu_tab_wares.png";
+static char const* pic_tab_workers = "images/wui/buildings/menu_list_workers.png";
 
 /*
 ===============
 Create the window and its panels, add it to the registry.
 ===============
 */
-ProductionSite_Window::ProductionSite_Window
-	(Interactive_GameBase & parent,
-	 ProductionSite       & ps,
-	 UI::Window *         & registry)
-	: Building_Window(parent, ps, registry)
-{
-	std::vector<Widelands::WaresQueue *> const & warequeues = ps.warequeues();
+ProductionSiteWindow::ProductionSiteWindow(InteractiveGameBase& parent,
+                                           UI::UniqueWindow::Registry& reg,
+                                           Widelands::ProductionSite& ps,
+                                           bool avoid_fastclick,
+                                           bool workarea_preview_wanted)
+   : BuildingWindow(parent, reg, ps, avoid_fastclick),
+     production_site_(&ps),
+     worker_table_(nullptr),
+     worker_caps_(nullptr) {
+	productionsitenotes_subscriber_ = Notifications::subscribe<Widelands::NoteBuilding>(
+	   [this](const Widelands::NoteBuilding& note) {
+		   if (is_dying_) {
+			   return;
+		   }
+		   Widelands::ProductionSite* production_site = production_site_.get(igbase()->egbase());
+		   if (production_site == nullptr) {
+			   return;
+		   }
+		   if (note.serial == production_site->serial()) {
+			   switch (note.action) {
+			   case Widelands::NoteBuilding::Action::kWorkersChanged:
+				   update_worker_table(production_site);
+				   break;
+			   default:
+				   break;
+			   }
+		   }
+	   });
+	init(avoid_fastclick, workarea_preview_wanted);
+}
 
-	if (warequeues.size()) {
+void ProductionSiteWindow::init(bool avoid_fastclick, bool workarea_preview_wanted) {
+	Widelands::ProductionSite* production_site = production_site_.get(igbase()->egbase());
+	assert(production_site != nullptr);
+
+	BuildingWindow::init(avoid_fastclick, workarea_preview_wanted);
+	const std::vector<Widelands::InputQueue*>& inputqueues = production_site->inputqueues();
+
+	if (inputqueues.size()) {
 		// Add the wares tab
-		UI::Box * prod_box = new UI::Box
-			(get_tabs(),
-			0, 0, UI::Box::Vertical,
-			g_gr->get_xres() - 80, g_gr->get_yres() - 80);
+		UI::Box* prod_box = new UI::Box(
+		   get_tabs(), 0, 0, UI::Box::Vertical, g_gr->get_xres() - 80, g_gr->get_yres() - 80);
 
-		for (uint32_t i = 0; i < warequeues.size(); ++i)
-			create_ware_queue_panel(prod_box, ps, warequeues[i]);
+		for (uint32_t i = 0; i < inputqueues.size(); ++i) {
+			prod_box->add(
+			   new InputQueueDisplay(prod_box, 0, 0, *igbase(), *production_site, *inputqueues[i]));
+		}
 
-		get_tabs()->add
-			("wares", g_gr->get_picture(PicMod_Game, pic_tab_wares),
-			 prod_box, _("Wares"));
+		get_tabs()->add("wares", g_gr->images().get(pic_tab_wares), prod_box, _("Wares"));
 	}
 
 	// Add workers tab if applicable
-	if (!productionsite().descr().nr_working_positions()) {
-		m_worker_table = 0;
+	if (!production_site->descr().nr_working_positions()) {
+		worker_table_ = nullptr;
 	} else {
-		m_worker_table = new UI::Table<uintptr_t>(get_tabs(), 0, 0, 340, 100);
+		UI::Box* worker_box = new UI::Box(get_tabs(), 0, 0, UI::Box::Vertical);
+		worker_table_ = new UI::Table<uintptr_t>(worker_box, 0, 0, 0, 100, UI::PanelStyle::kWui);
+		worker_caps_ = new UI::Box(worker_box, 0, 0, UI::Box::Horizontal);
 
-		m_worker_table->add_column(150, _("Worker"));
-		m_worker_table->add_column(40, _("Exp"));
-		m_worker_table->add_column(150, _("Next Level"));
+		const std::string workers_heading =
+		   (production_site->descr().nr_working_positions() == 1) ?
+		      /** TRANSLATORS: Header in production site window if there is 1 worker */
+		      _("Worker") :
+		      /** TRANSLATORS: Header in production site window if there is more than 1 worker. If you
+		         need plural forms here, please let us know. */
+		      _("Workers");
 
-		for
-			(unsigned int i = 0;
-			 i < productionsite().descr().nr_working_positions(); ++i)
-			m_worker_table->add(i);
+		worker_table_->add_column(210, workers_heading);
+		worker_table_->add_column(60, _("Exp"));
+		worker_table_->add_column(150, _("Next Level"));
 
-		get_tabs()->add
-			("workers", g_gr->get_picture(PicMod_UI, pic_tab_workers),
-			 m_worker_table,
-			 productionsite().descr().nr_working_positions() > 1 ?
-			 _("Workers") : _("Worker"));
+		for (unsigned int i = 0; i < production_site->descr().nr_working_positions(); ++i) {
+			worker_table_->add(i);
+		}
+		worker_table_->fit_height();
+
+		if (igbase()->can_act(production_site->owner().player_number())) {
+			worker_caps_->add_inf_space();
+			UI::Button* evict_button =
+			   new UI::Button(worker_caps_, "evict", 0, 0, 34, 34, UI::ButtonStyle::kWuiMenu,
+			                  g_gr->images().get("images/wui/buildings/menu_drop_soldier.png"),
+			                  _("Terminate the employment of the selected worker"));
+			evict_button->sigclicked.connect(
+			   boost::bind(&ProductionSiteWindow::evict_worker, boost::ref(*this)));
+			worker_caps_->add(evict_button);
+		}
+
+		worker_box->add(worker_table_, UI::Box::Resizing::kFullSize);
+		worker_box->add_space(4);
+		worker_box->add(worker_caps_, UI::Box::Resizing::kFullSize);
+		get_tabs()->add("workers", g_gr->images().get(pic_tab_workers), worker_box, workers_heading);
+		update_worker_table(production_site);
 	}
+	think();
 }
 
-void ProductionSite_Window::think()
-{
-	Building_Window::think();
+void ProductionSiteWindow::think() {
+	// BuildingWindow::think() will call die in case we are no longer in
+	// existance.
+	BuildingWindow::think();
 
-	if (m_worker_table) {
-		assert
-			(productionsite().descr().nr_working_positions() ==
-			 m_worker_table->size());
+	Widelands::ProductionSite* production_site = production_site_.get(igbase()->egbase());
+	if (production_site == nullptr) {
+		return;
+	}
 
-		for
-			(unsigned int i = 0;
-			 i < productionsite().descr().nr_working_positions(); ++i)
-		{
-			const Widelands::Worker * worker =
-				productionsite().working_positions()[i].worker;
-			const Widelands::Request * request =
-				productionsite().working_positions()[i].worker_request;
-			UI::Table<uintptr_t>::Entry_Record & er =
-				m_worker_table->get_record(i);
-
-			if (worker) {
-				er.set_picture(0, worker->icon(), worker->descname());
-
-				if
-					(worker->get_current_experience() != -1
-					 and
-					 worker->get_needed_experience () != -1)
-				{
-					assert(worker->becomes());
-
-					// Fill upgrade status
-					char buffer[7];
-					snprintf
-						(buffer, sizeof(buffer),
-						 "%i/%i",
-						 worker->get_current_experience(),
-						 worker->get_needed_experience());
-
-					er.set_string(1, buffer);
-					er.set_string
-						(2, worker->tribe().get_worker_descr
-						 (worker->becomes())->descname());
-				} else {
-					// Worker is not upgradeable
-					er.set_string(1, "---");
-					er.set_string(2, "---");
-				}
-			} else {
-				const Widelands::Worker_Descr * desc =
-					productionsite().tribe().get_worker_descr(request->get_index());
-				er.set_picture
-					(0, desc->icon(),
-					 request->is_open() ? _("(vacant)") : _("(coming)"));
-
-				er.set_string(1, "");
-				er.set_string(2, "");
-			}
+	// If we have pending requests, update table each tick.
+	// This is required to update from 'vacant' to 'coming'
+	for (unsigned int i = 0; i < production_site->descr().nr_working_positions(); ++i) {
+		Widelands::Request* r = production_site->working_positions()[i].worker_request;
+		if (r) {
+			update_worker_table(production_site);
+			break;
 		}
 	}
 }
 
-/*
-===============
-Create the production site information window.
-===============
-*/
-void ProductionSite::create_options_window
-	(Interactive_GameBase & parent, UI::Window * & registry)
-{
-	new ProductionSite_Window(parent, *this, registry);
+void ProductionSiteWindow::update_worker_table(Widelands::ProductionSite* production_site) {
+	assert(production_site != nullptr);
+
+	if (worker_table_ == nullptr) {
+		return;
+	}
+
+	assert(production_site->descr().nr_working_positions() == worker_table_->size());
+
+	for (unsigned int i = 0; i < production_site->descr().nr_working_positions(); ++i) {
+		const Widelands::Worker* worker = production_site->working_positions()[i].worker;
+		const Widelands::Request* request = production_site->working_positions()[i].worker_request;
+		UI::Table<uintptr_t>::EntryRecord& er = worker_table_->get_record(i);
+
+		if (worker) {
+			er.set_picture(0, worker->descr().icon(), worker->descr().descname());
+
+			if (worker->get_current_experience() != Widelands::INVALID_INDEX &&
+			    worker->descr().get_needed_experience() != Widelands::INVALID_INDEX) {
+				assert(worker->descr().becomes() != Widelands::INVALID_INDEX);
+				assert(worker->owner().tribe().has_worker(worker->descr().becomes()));
+
+				// Fill upgrade status
+				/** TRANSLATORS: %1% = the experience a worker has */
+				/** TRANSLATORS: %2% = the experience a worker needs to reach the next level */
+				er.set_string(1, (boost::format(_("%1%/%2%")) % worker->get_current_experience() %
+				                  worker->descr().get_needed_experience())
+				                    .str());
+				er.set_string(
+				   2, worker->owner().tribe().get_worker_descr(worker->descr().becomes())->descname());
+			} else {
+				// Worker is not upgradeable
+				er.set_string(1, "—");
+				er.set_string(2, "—");
+			}
+		} else if (request) {
+			const Widelands::WorkerDescr* desc =
+			   production_site->owner().tribe().get_worker_descr(request->get_index());
+			er.set_picture(0, desc->icon(), request->is_open() ? _("(vacant)") : _("(coming)"));
+
+			er.set_string(1, "");
+			er.set_string(2, "");
+		} else {
+			// Should only occur during cleanup
+			continue;
+		}
+	}
+}
+
+void ProductionSiteWindow::evict_worker() {
+	Widelands::ProductionSite* production_site = production_site_.get(igbase()->egbase());
+	if (production_site == nullptr) {
+		return;
+	}
+
+	if (worker_table_->has_selection()) {
+		Widelands::Worker* worker =
+		   production_site->working_positions()[worker_table_->get_selected()].worker;
+		if (worker) {
+			igbase()->game().send_player_evict_worker(*worker);
+		}
+	}
 }

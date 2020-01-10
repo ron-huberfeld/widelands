@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006, 2008-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,163 +13,78 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_MESSAGE_MENU_H
-#define GAME_MESSAGE_MENU_H
+#ifndef WL_WUI_GAME_MESSAGE_MENU_H
+#define WL_WUI_GAME_MESSAGE_MENU_H
 
+#include "base/i18n.h"
+#include "logic/message.h"
 #include "logic/message_queue.h"
-
 #include "ui_basic/button.h"
 #include "ui_basic/multilinetextarea.h"
 #include "ui_basic/table.h"
 #include "ui_basic/unique_window.h"
 
-#include "i18n.h"
-
-#include "container_iterate.h"
-#include "ref_cast.h"
-
 namespace Widelands {
-struct Game;
+class Game;
 struct Message;
-};
-struct Interactive_Player;
+}  // namespace Widelands
+class InteractivePlayer;
 
 ///  Shows the not already fulfilled objectives.
 struct GameMessageMenu : public UI::UniqueWindow {
-	GameMessageMenu(Interactive_Player &, UI::UniqueWindow::Registry &);
+	GameMessageMenu(InteractivePlayer&, UI::UniqueWindow::Registry&);
 
 	/// Shows a newly created message. Assumes that the message is not yet in
 	/// the list (the message was added to the queue after the last time think()
-	/// was executed.
-	void show_new_message(Widelands::Message_Id, Widelands::Message const &);
+	/// was executed. Toggles to inbox and autoselects the new entry unless the user
+	/// is currently multiselecting messages.
+	void show_new_message(Widelands::MessageId, const Widelands::Message&);
 
-	enum Mode {Inbox, Archive};
-	void think();
-	virtual bool handle_key(bool down, SDL_keysym code);
+	enum Mode { Inbox, Archive };
+	void think() override;
+	bool handle_key(bool down, SDL_Keysym code) override;
 
 private:
-	Interactive_Player & iplayer() const;
-	void                 selected(uint32_t);
+	enum Cols { ColTitle, ColType, ColStatus, ColTimeSent };
+	enum class ReadUnread : uint8_t { allMessages, readMessages, newMessages };
 
-	bool status_compare(uint32_t a, uint32_t b);
-	void do_delete();
+	InteractivePlayer& iplayer() const;
+	void selected(uint32_t);
+	void double_clicked(uint32_t);
 
-	struct List : public UI::Table<uintptr_t> {
-		enum Cols {Select, Status, Title, Time_Sent};
-		List(GameMessageMenu & parent) :
-			UI::Table<uintptr_t>(&parent, 5, 35, 360, 110)
-		{
-			selected.set(&parent, &GameMessageMenu::selected);
-			add_column (50, _("Select"), UI::Align_HCenter, true);
-			add_column (50, _("Status"), UI::Align_HCenter);
-			add_column(136, _("Title"));
-			add_column(100, _("Time sent"));
-		}
-	} list;
+	bool compare_title(uint32_t a, uint32_t b);
+	bool compare_status(uint32_t a, uint32_t b);
+	bool compare_type(uint32_t a, uint32_t b);
+	bool compare_time_sent(uint32_t a, uint32_t b);
+	bool should_be_hidden(const Widelands::Message& message);
 
-	void update_record(List::Entry_Record & er, Widelands::Message const &);
+	void archive_or_restore();
+	void toggle_mode();
+	void center_view();
+	void filter_messages(Widelands::Message::Type);
+	void toggle_filter_messages_button(UI::Button&, Widelands::Message::Type);
+	void set_filter_messages_tooltips();
+	std::string display_message_type_icon(const Widelands::Message&);
+	void update_record(UI::Table<uintptr_t>::EntryRecord& er, const Widelands::Message&);
+	void update_archive_button_tooltip();
 
-	UI::Multiline_Textarea message_body;
-
-	struct Clear_Selection : public UI::Button {
-		Clear_Selection(GameMessageMenu & parent) :
-			UI::Button
-				(&parent, "clear_selection",
-				 5, 5, 70, 25,
-				 g_gr->get_picture(PicMod_UI, "pics/but0.png"),
-				 _("Clear"), _("Clear selection"))
-		{}
-		void clicked() {
-			GameMessageMenu & menu =
-				ref_cast<GameMessageMenu, UI::Panel>(*get_parent());
-			for (wl_index_range<uint8_t> i(0, menu.list.size()); i; ++i)
-				menu.list.get_record(i.current).set_checked
-					(List::Select, false);
-		}
-	} clear_selection;
-
-	struct Invert_Selection : public UI::Button {
-		Invert_Selection(GameMessageMenu & parent) :
-			UI::Button
-				(&parent, "invert_selection",
-				 80, 5, 70, 25,
-				 g_gr->get_picture(PicMod_UI, "pics/but0.png"),
-				 _("Invert"), _("Invert selection"))
-		{}
-		void clicked() {
-			GameMessageMenu & menu =
-				ref_cast<GameMessageMenu, UI::Panel>(*get_parent());
-
-			for (wl_index_range<uint8_t> i(0, menu.list.size()); i; ++i)
-				menu.list.get_record(i.current).toggle(List::Select);
-		}
-	} invert_selection;
-
-	struct Archive_Or_Restore_Selected_Messages : public UI::Button {
-		Archive_Or_Restore_Selected_Messages(GameMessageMenu & parent) :
-			UI::Button
-				(&parent, "archive_or_restore_selected_messages",
-				 155, 5, 25, 25,
-				 g_gr->get_picture(PicMod_UI, "pics/but2.png"),
-				 g_gr->get_picture(PicMod_Game, "pics/message_archive.png"),
-				 _("Archive selected messages"))
-		{}
-		void clicked();
-	} archive_or_restore_selected_messages;
-
-	struct Toggle_Between_Inbox_And_Archive : public UI::Button {
-		Toggle_Between_Inbox_And_Archive(GameMessageMenu & parent) :
-			UI::Button
-				(&parent, "toggle_between_inbox_or_archive",
-				 185, 5, 100, 25,
-				 g_gr->get_picture(PicMod_UI, "pics/but2.png"),
-				 _("Show Archive"))
-		{}
-		void clicked() {
-			GameMessageMenu & menu =
-				ref_cast<GameMessageMenu, UI::Panel>(*get_parent());
-			menu.list.clear();
-			switch (menu.mode) {
-			case Inbox:
-				menu.mode = Archive;
-				menu.set_title(_("Message Menu: Archive"));
-				menu.archive_or_restore_selected_messages.set_pic
-					(g_gr->get_picture(PicMod_Game, "pics/message_restore.png"));
-				menu.archive_or_restore_selected_messages.set_tooltip
-					(_("Restore selected messages"));
-				set_title(_("Show Inbox"));
-				break;
-			case Archive:
-				menu.mode = Inbox;
-				menu.set_title(_("Message Menu: Inbox"));
-				menu.archive_or_restore_selected_messages.set_pic
-					(g_gr->get_picture(PicMod_Game, "pics/message_archive.png"));
-				menu.archive_or_restore_selected_messages.set_tooltip
-					(_("Archive selected messages"));
-				set_title(_("Show Archive"));
-				break;
-			}
-		}
-	} toggle_between_inbox_and_archive;
-
-	struct Center_Main_Mapview_On_Location : public UI::Button {
-		Center_Main_Mapview_On_Location(GameMessageMenu & parent) :
-			UI::Button
-				(&parent, "center_main_mapview_on_location",
-				 340, 5, 25, 25,
-				 g_gr->get_picture(PicMod_UI, "pics/but2.png"),
-				 g_gr->get_picture(PicMod_Game, "pics/menu_goto.png"),
-				 _("center main mapview on location"),
-				 false)
-		{}
-		void clicked();
-	} center_main_mapview_on_location;
-
+	UI::Table<uintptr_t>* list;
+	UI::MultilineTextarea message_body;
+	UI::Button* archivebtn_;
+	UI::Button* togglemodebtn_;
+	UI::Button* centerviewbtn_;
 	Mode mode;
+	// Buttons for message types
+	UI::Button* geologistsbtn_;
+	UI::Button* economybtn_;
+	UI::Button* seafaringbtn_;
+	UI::Button* warfarebtn_;
+	UI::Button* scenariobtn_;
+	Widelands::Message::Type message_filter_;
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_GAME_MESSAGE_MENU_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006, 2008-2010 by the Widelands Development Team
+ * Copyright 2010-2011 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,75 +13,98 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef TEXTURE_H
-#define TEXTURE_H
+#ifndef WL_GRAPHIC_TEXTURE_H
+#define WL_GRAPHIC_TEXTURE_H
 
-#include "colormap.h"
-#include "picture_id.h"
+#include <memory>
 
-#include "graphic/render/gl_picture_texture.h"
+#include "base/rect.h"
+#include "graphic/gl/system_headers.h"
+#include "graphic/surface.h"
 
-#include <boost/shared_ptr.hpp>
-#include <stdint.h>
-#include <vector>
+struct SDL_Surface;
 
-/**
- * This contains all the road textures needed to render roads
- */
-struct Road_Textures {
-	PictureID pic_road_normal;
-	PictureID pic_road_busy;
-};
+class Texture : public Surface, public Image {
+public:
+	// Create a new surface from an SDL_Surface. If intensity is true, an GL_INTENSITY texture
+	// is created. Ownership is taken.
+	Texture(SDL_Surface* surface, bool intensity = false);
 
-/** class Texture
-*
-* Texture represents are terrain texture, which is strictly
-* TEXTURE_WIDTH by TEXTURE_HEIGHT pixels in size. It uses 8 bit color, and
-* a pointer to the corresponding palette and color lookup table is
-* provided.
-*
-* Currently, this is initialized from a 16 bit bitmap. This should be
-* changed to load 8 bit bitmaps directly.
-*/
-struct Texture {
-	Texture
-		(char const & fnametempl, uint32_t frametime, const SDL_PixelFormat &);
-	~Texture();
+	// Create a new empty (that is randomly filled) Surface with the given
+	// dimensions.
+	Texture(int w, int h);
 
-	const char * get_texture_picture() const {return m_texture_picture;}
+	// Create a logical texture that is a 'subrect' (in Pixel) in
+	// another texture. Ownership of 'texture' is not taken.
+	Texture(const GLuint texture, const Recti& subrect, int parent_w, int parent_h);
 
-	uint8_t * get_pixels   () const {return m_pixels;}
-	uint8_t * get_curpixels() const {return m_curframe;}
-	void    * get_colormap () const {return m_colormap->get_colormap();}
+	~Texture() override;
 
-	uint32_t get_minimap_color(char shade);
+	// Implements Surface
+	int width() const override;
+	int height() const override;
 
-	void animate(uint32_t time);
-	void reset_was_animated() {m_was_animated = false;}
-	bool was_animated() const throw () {return m_was_animated;}
-#ifdef USE_OPENGL
-	uint32_t getTexture() const
-		{return m_glFrames.at(m_frame_num)->get_gl_texture();}
-#endif
+	// Implements Image.
+	const BlitData& blit_data() const override;
+
+	enum UnlockMode {
+		/**
+		 * Update mode will ensure that any changes in the pixel data
+		 * will appear in subsequent operations.
+		 */
+		Unlock_Update = 0,
+
+		/**
+		 * NoChange mode indicates that the caller changed no pixel data.
+		 *
+		 * \note If the caller did change pixel data but specifies NoChange
+		 * mode, the results are undefined.
+		 */
+		Unlock_NoChange
+	};
+
+	// Lock/Unlock pairs must guard any of the direct pixel access using the
+	// functions below. Lock/Unlock pairs cannot be nested.
+	void lock();
+	void unlock(UnlockMode);
+
+	// Returns the color of the pixel.
+	RGBAColor get_pixel(uint16_t x, uint16_t y);
+
+	// Sets the pixel to the 'clr'.
+	void set_pixel(uint16_t x, uint16_t y, const RGBAColor& color);
 
 private:
-	Colormap * m_colormap;
-	uint8_t  * m_pixels;
-	uint32_t   m_mmap_color;
-	uint8_t  * m_curframe;
-	int32_t    m_frame_num;
-	char     * m_texture_picture;
-	uint32_t   m_nrframes;
-	uint32_t   m_frametime;
-	bool       is_32bit;
-	bool       m_was_animated;
-#ifdef USE_OPENGL
-	std::vector<boost::shared_ptr<GLPictureTexture> > m_glFrames;
-#endif
+	// Configures OpenGL to draw to this surface.
+	void setup_gl();
+	void init(uint16_t w, uint16_t h);
+
+	// Implements surface.
+	void do_blit(const Rectf& dst_rect,
+	             const BlitData& texture,
+	             float opacity,
+	             BlendMode blend_mode) override;
+	void do_blit_blended(const Rectf& dst_rect,
+	                     const BlitData& texture,
+	                     const BlitData& mask,
+	                     const RGBColor& blend) override;
+	void do_blit_monochrome(const Rectf& dst_rect,
+	                        const BlitData& texture,
+	                        const RGBAColor& blend) override;
+	void do_draw_line_strip(std::vector<DrawLineProgram::PerVertexData> vertices) override;
+	void do_fill_rect(const Rectf& dst_rect, const RGBAColor& color, BlendMode blend_mode) override;
+
+	// True if we own the texture, i.e. if we need to delete it.
+	bool owns_texture_;
+
+	BlitData blit_data_;
+	/// Pixel data, while the texture is locked
+	std::unique_ptr<uint8_t[]> pixels_;
+
+	DISALLOW_COPY_AND_ASSIGN(Texture);
 };
 
-#endif
+#endif  // end of include guard: WL_GRAPHIC_TEXTURE_H

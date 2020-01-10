@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2008 by the Widelands Development Team
+ * Copyright (C) 2007-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,58 +13,42 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_TIPS_H
-#define GAME_TIPS_H
+#ifndef WL_WUI_GAME_TIPS_H
+#define WL_WUI_GAME_TIPS_H
+
+#include <cstring>
+#include <string>
+#include <vector>
 
 #include "ui_basic/progresswindow.h"
 
-#include <string>
-#include <cstring>
-#include <vector>
-
 /// Displays game tips in progress window
 struct GameTips : public UI::IProgressVisualization {
-	GameTips
-		(UI::ProgressWindow & progressWindow, std::vector<std::string>,
-		 std::string style = "default");
-	virtual ~GameTips();
+	GameTips(UI::ProgressWindow& progressWindow, const std::vector<std::string>&);
+	~GameTips() override;
 
-	virtual void update(bool repaint);
-	virtual void stop();
+	void update(bool repaint) override;
+	void stop() override;
 
 private:
 	struct Tip {
-		std::string  text;
-		int32_t          interval;
+		std::string text;
+		int32_t interval;
 	};
-	void load_style(std::string);
-	void load_tips(std::string);
-
+	void load_tips(const std::string& name);
 	void show_tip(int32_t index);
-	RGBColor color_from_hex(const char * hexcode, const RGBColor & def);
-	uint32_t colorvalue_from_hex(char c1, char c2);
 
-	uint32_t             m_lastUpdated;
-	uint32_t             m_updateAfter;
-	UI::ProgressWindow & m_progressWindow;
-	bool                 m_registered;
-	uint32_t                 m_lastTip;
+	uint32_t lastUpdated_;
+	uint32_t updateAfter_;
+	UI::ProgressWindow& progressWindow_;
+	bool registered_;
+	uint32_t lastTip_;
 
-	std::vector<Tip>     m_tips;
-	std::string          m_background_picture;
-	uint32_t                 m_width;
-	uint32_t                 m_height;
-	uint32_t                 m_pading_l;
-	uint32_t                 m_pading_r;
-	uint32_t                 m_pading_t;
-	uint32_t                 m_pading_b;
-	int32_t                  m_font_size;
-	RGBColor             m_bgcolor;
-	RGBColor             m_color;
+	std::vector<Tip> tips_;
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_GAME_TIPS_H

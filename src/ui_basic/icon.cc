@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,40 +13,64 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "icon.h"
+#include "ui_basic/icon.h"
+
+#include "graphic/image.h"
 #include "graphic/rendertarget.h"
-#include "graphic/picture.h"
 
 namespace UI {
 
-Icon::Icon
-	(Panel * const parent,
-	 const int32_t x, const int32_t y, const int32_t w, const int32_t h,
-	 const PictureID picture_id)
-	:
-	Panel(parent, x, y, w, h),
-	m_pic(picture_id),
-	m_w(w),
-	m_h(h)
-{
+Icon::Icon(Panel* const parent,
+           const int32_t x,
+           const int32_t y,
+           const int32_t w,
+           const int32_t h,
+           const Image* picture_id)
+   : Panel(parent, x, y, w, h), pic_(picture_id), draw_frame_(false) {
 	set_handle_mouse(false);
-	set_think(false);
+	set_thinks(false);
 }
 
-void Icon::setIcon(PictureID picture_id) {
-	m_pic = picture_id;
-	update();
+Icon::Icon(Panel* const parent, const Image* picture_id)
+   : Icon(parent, 0, 0, picture_id->width(), picture_id->height(), picture_id) {
 }
 
-void Icon::draw(RenderTarget & dst) {
-	assert(m_pic != g_gr->get_no_picture());
-	int32_t w = (m_w - m_pic->get_w()) / 2;
-	int32_t h = (m_h - m_pic->get_h()) / 2;
-	dst.blit(Point(w, h), m_pic);
+void Icon::set_icon(const Image* picture_id) {
+	pic_ = picture_id;
 }
 
+void Icon::set_frame(const RGBColor& color) {
+	draw_frame_ = true;
+	framecolor_.r = color.r;
+	framecolor_.g = color.g;
+	framecolor_.b = color.b;
 }
+
+void Icon::set_no_frame() {
+	draw_frame_ = false;
+}
+
+void Icon::draw(RenderTarget& dst) {
+	if (pic_) {
+		const int available_width = draw_frame_ ? get_w() - 2 : get_w();
+		const int available_height = draw_frame_ ? get_h() - 2 : get_h();
+		const float scale =
+		   std::min(1.f, std::min(static_cast<float>(available_width) / pic_->width(),
+		                          static_cast<float>(available_height) / pic_->height()));
+		// We need to be pixel perfect, so we use ints.
+		const int width = scale * available_width;
+		const int height = scale * available_height;
+		const int x = (available_width - width) / 2;
+		const int y = (available_height - height) / 2;
+		dst.blitrect_scale(Rectf(draw_frame_ ? x + 1 : x, draw_frame_ ? y + 1 : y, width, height),
+		                   pic_, Recti(0, 0, pic_->width(), pic_->height()), 1., BlendMode::UseAlpha);
+		if (draw_frame_) {
+			dst.draw_rect(Recti(x, y, width + 2, height + 2), framecolor_);
+		}
+	}
+}
+}  // namespace UI

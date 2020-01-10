@@ -1,416 +1,372 @@
 project (widelands)
 
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.7)
+cmake_policy(VERSION 2.8.7)
 
-# Used as versioning, if WL_VERSION_STANDARD is definded.
-if (WL_VERSION_STANDARD)
-	# Set the values below for standard versioning.
-	# As long as WL_VERSION_MAJOR is 0, the naming will be in form of
-	# "Build${WL_VERSION_MINOR}" + ".${WL_VERSION_PATCH}" if WL_VERSION_PATCH is
-	# defined.
-	set (WL_VERSION_MAJOR 0)
-	set (WL_VERSION_MINOR 15)
+include("${CMAKE_SOURCE_DIR}/cmake/UseSystemInfo.cmake")
 
-	# Just define in case that we release patches for official builds
-	#set (WL_VERSION_PATCH 90)
+# This policy is not known to versions prior 3.1 and would result in errors,
+# if set on such systems. This can be removed when cmake_minimum_required is set
+# to 3.1 or newer by using:
+# cmake_policy(VERSION 3.1)
+if(POLICY CMP0054)
+   cmake_policy(SET CMP0054 NEW)
+endif(POLICY CMP0054)
 
-	# An addition to the version name (e.g. RC1, DEV, ...)
-	set (WL_VERSION_ADDITION DEV)
-endif (WL_VERSION_STANDARD)
+# This policy is not known to versions prior 3.11 and would result in errors,
+# if set on such systems. This can be removed when cmake_minimum_required is set
+# to 3.11 or newer  by using:
+# cmake_policy(VERSION 3.11)
+if(POLICY CMP0072)
+  cmake_policy(SET CMP0072 NEW)
 
-# Define the directory structure for installation - will be hardcoded in WL bin
-# If nothing is given on command line, set the standard values depending on platform.
+  # TODO(stonerl): Check on later Ubuntu releases whether this workaround is
+  # still needed or not.
+  if (CMAKE_SYSTEM MATCHES "Linux")
+    distro_name (DISTRO_NAME)
+    # DISTRO_NAME is different on the build-servers.
+    if ((DISTRO_NAME MATCHES "Ubuntu 18.10" OR DISTRO_NAME MATCHES "Cosmic"
+         OR DISTRO_NAME MATCHES "Ubuntu 19.04" OR DISTRO_NAME MATCHES "Disco"
+         OR DISTRO_NAME MATCHES "Ubuntu 19.10" OR DISTRO_NAME MATCHES "Eoan")
+        AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      cmake_policy(SET CMP0072 OLD)
+    endif()
+  endif()
+endif(POLICY CMP0072)
 
-if (WIN32 OR APPLE OR WL_PORTABLE)
-  if (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
-    set (WL_INSTALL_PREFIX ".")
-  endif (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
+# This policy is not known to versions prior 3.12 and would result in errors,
+# if set on such systems. This can be removed when cmake_minimum_required is set
+# to 3.12 or newer  by using:
+# cmake_policy(VERSION 3.12)
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif(POLICY CMP0074)
 
-  if (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
-    set (WL_INSTALL_DATADIR ".")
-  endif (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
+include("${CMAKE_SOURCE_DIR}/cmake/WlFunctions.cmake")
 
-  if (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
-    set (WL_INSTALL_LOCALEDIR "locale")
-  endif (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
+option(OPTION_USE_GLBINDING "Use glbinding instead of GLEW" OFF)
+option(OPTION_GLEW_STATIC "Use static GLEW Library" OFF)
+option(OPTION_BUILD_WEBSITE_TOOLS "Build website-related tools" ON)
+option(OPTION_BUILD_TRANSLATIONS "Build translations" ON)
+option(OPTION_BUILD_TESTS "Build tests" ON)
+option(OPTION_BUILD_CODECHECK "Build codecheck" ON)
 
-  if (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-    set (WL_INSTALL_BINDIR ".")
-  endif (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-elseif (WIN32 OR APPLE OR WL_PORTABLE)
-  if (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
-    set (WL_INSTALL_PREFIX "/usr/local")
-  endif (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
-
-  if (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
-    set (WL_INSTALL_DATADIR "share/games/widelands")
-  endif (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
-
-  if (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
-    set (WL_INSTALL_LOCALEDIR "${WL_INSTALL_PREFIX}/${WL_INSTALL_DATADIR}/locale")
-  endif (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
-
-  if (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-    set (WL_INSTALL_BINDIR "games")
-  endif (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-endif (WIN32 OR APPLE OR WL_PORTABLE)
-
-# General install prefix for config.h
-if (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
-	set (WL_INSTALL_PREFIX /usr/local)
-endif (NOT WL_INSTALL_PREFIX OR WL_INSTALL_PREFIX STREQUAL "")
-
-# Widelands binary directory
-if (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-	set (WL_INSTALL_BINDIR games)
-endif (NOT WL_INSTALL_BINDIR OR WL_INSTALL_BINDIR STREQUAL "")
-
-# Widelands data directory
-if (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
-	set (WL_INSTALL_DATADIR share/games/widelands)
-endif (NOT WL_INSTALL_DATADIR OR WL_INSTALL_DATADIR STREQUAL "")
-
-# Widelands locale directory
-if (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
-	set (WL_INSTALL_LOCALEDIR ${WL_INSTALL_PREFIX}/${WL_INSTALL_DATADIR}/locale)
-endif (NOT WL_INSTALL_LOCALEDIR OR WL_INSTALL_LOCALEDIR STREQUAL "")
+option(USE_XDG "Follow XDG-Basedir specification" ON) # Enabled by default
+IF(USE_XDG AND NOT APPLE AND NOT WIN32)
+  ADD_DEFINITIONS(-DUSE_XDG)
+  message(STATUS "Building with XDG support")
+ENDIF(USE_XDG AND NOT APPLE AND NOT WIN32)
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
-  message(FATAL_ERROR "Build-directory and source-directory are the same!")
+  message(FATAL_ERROR "Build directory and source directory must not be the same.")
 endif (CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
 
-if (CMAKE_INSTALL_PREFIX STREQUAL CMAKE_BINARY_DIR)
-  message(FATAL_ERROR "Build-directory and install-directory are the same!")
-endif (CMAKE_INSTALL_PREFIX STREQUAL CMAKE_BINARY_DIR)
+# Define the directory structure for installation - will be hardcoded in WL bin
+# (through config.h). If not specified, we are going to use the directory where
+# the executable is in. Also on Linux.
+# Packagers (or people using make install) have to set this variable to an absolute path.
+wl_set_if_unset(WL_INSTALL_BASEDIR ".")
+
+# Define the directory structure for installation of the data files - will be hardcoded
+# in WL bin (through config.h). If not specified, we are going to use the "data" directory
+# below the directory where the executable is in. Also on Linux.
+# Packagers (or people using make install) have to set this variable to an absolute path.
+wl_set_if_unset(WL_INSTALL_DATADIR "./data")
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.8)
+    message(FATAL_ERROR "Widelands needs GCC >= 4.8 to compile.")
+  endif()
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.4)
+    message(FATAL_ERROR "Clang version must be at least 3.4!")
+  endif()
+else()
+  message(WARNING "You are using an unsupported compiler! Supported are Clang and GCC.")
+endif()
 
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 
+if (WIN32)
+  set (Boost_USE_STATIC_LIBS  ON)
+  link_libraries(wsock32 ws2_32 bcrypt)
+else()
+  set (Boost_USE_STATIC_LIBS  OFF)
+endif()
+set (Boost_USE_MULTITHREADED ON)
+set (Boost_DETAILED_FAILURE_MSG ON)
+find_package(Boost 1.48
+  COMPONENTS
+    unit_test_framework
+    regex
+  REQUIRED
+    system)
+
+find_package (PythonInterp REQUIRED)
+
+find_package(Gettext REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(PNG REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(SDL2_image REQUIRED)
+find_package(SDL2_mixer REQUIRED)
+find_package(SDL2_ttf REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(ICU REQUIRED)
+if(OPTION_USE_GLBINDING)
+  find_package(glbinding REQUIRED)
+else()
+  find_package(GLEW REQUIRED)
+endif()
+
+if (APPLE OR WIN32 OR
+    CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR
+    CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+  if (NOT CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
+    find_package(intl REQUIRED)
+  endif()
+endif()
+
+# Disable no symbols warning on macOS, but only on versions where this is
+# supported. It is not supported on OS X 10.7 (DARWIN_MAJOR_VERSION == 11).
+if (APPLE)
+    if (${DARWIN_MAJOR_VERSION} GREATER 11)
+        SET(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+        SET(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+        SET(CMAKE_C_ARCHIVE_FINISH   "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+        SET(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+    endif()
+endif()
+
+# TODO(sirver): One day, this should be enabled. Then we have no more cycles in our dependencies....
+# set_property(GLOBAL PROPERTY GLOBAL_DEPENDS_NO_CYCLES ON)
+
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
   find_path(FILE_WL_RELEASE "WL_RELEASE" ${CMAKE_CURRENT_SOURCE_DIR})
-  if (${FILE_WL_RELEASE} STREQUAL "FILE_WL_RELEASE-NOTFOUND")
-    set (CMAKE_BUILD_TYPE Debug)
-  else (${FILE_WL_RELEASE} STREQUAL "FILE_WL_RELEASE-NOTFOUND")
-    set (CMAKE_BUILD_TYPE Release)
-  endif (${FILE_WL_RELEASE} STREQUAL "FILE_WL_RELEASE-NOTFOUND")
+  if(${FILE_WL_RELEASE} STREQUAL "FILE_WL_RELEASE-NOTFOUND")
+    set(CMAKE_BUILD_TYPE Debug)
+  else()
+    set(CMAKE_BUILD_TYPE Release)
+  endif()
 endif (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
 
-set (CMAKE_CONFIGURATION_TYPES ${CMAKE_BUILD_TYPE})
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(WL_DEBUG_FLAGS "-g -DDEBUG")
+  option(OPTION_ASAN "Build with AddressSanitizer" ON)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+  if(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.2))
+    message(STATUS "GCC >6.2.0 breaks -03, setting -02")
+    set(WL_OPTIMIZE_FLAGS "-O2")
+  else()
+    set(WL_OPTIMIZE_FLAGS "-O3")
+  endif ()
+  set(WL_DEBUG_FLAGS "-DNDEBUG -DNOPARACHUTE")
+  option(OPTION_ASAN "Build with AddressSanitizer" OFF)
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  if(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.2))
+    message(STATUS "GCC >6.2.0 breaks -03, setting -02")
+    set(WL_OPTIMIZE_FLAGS "-O2")
+  else()
+    set(WL_OPTIMIZE_FLAGS "-O3")
+  endif ()
+  set(WL_DEBUG_FLAGS "-DNDEBUG -DNOPARACHUTE")
+  option(OPTION_ASAN "Build with AddressSanitizer" ON)
+else()
+  message(FATAL_ERROR "Unknown CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+endif()
 
-# Unit tests are built per default in Debug and not build in Release
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  option (WL_UNIT_TESTS "build and run unit tests (requires boost_unit_test_framework)" ON)
-else (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  option (WL_UNIT_TESTS "build and run unit tests (requires boost_unit_test_framework)" OFF)
-endif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+wl_add_flag(WL_GENERIC_CXX_FLAGS "-std=c++11")
 
-# we only include Boost Headers to the main executable, no libraries
-# unit_test_framework is for testing only
-if (WL_UNIT_TESTS)
-  message(STATUS "Enabled unit tests")
+if(OPTION_ASAN)
+  message(STATUS "Using AddressSanitizer https://clang.llvm.org/docs/AddressSanitizer.html")
+  # See https://clang.llvm.org/docs/AddressSanitizer.html
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-fsanitize=address")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-fno-omit-frame-pointer")
+  set (CMAKE_EXE_LINKER_FLAGS "-fsanitize=address" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+else()
+  message(STATUS "Not using AddressSanitizer.")
+endif(OPTION_ASAN)
 
-  set (BUILD_SHARED_LIBS OFF)
-  set (Boost_FIND_COMPONENTS unit_test_framework)
-  set (Boost_USE_STATIC_LIBS   ON)
-  set (Boost_USE_MULTITHREADED ON)
-  set (Boost_DETAILED_FAILURE_MSG ON)
-  find_package(Boost 1.35.0 COMPONENTS unit_test_framework REQUIRED)
+# This is set to avoid linker errors when using GLVND-libs on Linux
+if("${OpenGL_GL_PREFERENCE}" STREQUAL "GLVND")
+   link_libraries("GL")
+   add_compile_definitions(WL_USE_GLVND)
+   message(STATUS "Adding linker flags for GLVND.")
+endif()
 
-  if (NOT DEFINED MSVC)
-    string( REGEX MATCH ".a$" BOOST_STATIC_UNIT_TEST_LIB ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY})
-    if (NOT BOOST_STATIC_UNIT_TEST_LIB)
-      add_definitions(-DBOOST_TEST_DYN_LINK)
-    endif (NOT BOOST_STATIC_UNIT_TEST_LIB)
-  endif(NOT DEFINED MSVC)
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Weverything")
 
-  include(CTest)
-  enable_testing()
+  # Disabled warnings that are overly verbose right now or just do not make sense.
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-c++98-compat")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-c++98-compat-pedantic")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-conversion")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-exit-time-destructors")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-global-constructors")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-padded")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-sign-conversion")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-missing-noreturn")
 
-  #automatic unit testing hook, must be updated to reflect all tests
-  #if this is too intricate, we can also have this as an automatic detection
-  #but the current way allows to disable certain checks if they are taking
-  #too much time when ran every compile time
-  add_custom_target(autotest ALL
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS widelands;test_widelands_scripting
-  )
-else (WL_UNIT_TESTS)
-  message(STATUS "Disabled Unit Tests")
-  find_package(Boost 1.35.0 REQUIRED)
-endif (WL_UNIT_TESTS)
+  # It is impossible to write code that both GCC and Clang will like,
+  # so we have to switch off the warning for one of them.
+  # http://clang-developers.42468.n3.nabble.com/Question-on-Wswitch-enum-td4025927.html
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-switch-enum")
 
-option (WL_STRICT "If strict compilation mode is requested (almost every warning is an error)" OFF)
+  # TODO(sirver): weak-vtables should be enabled, but leads to lot of errors right now.
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-weak-vtables")
 
-set (PARAMETER_COMPILERFLAG_OLDSTYLECAST_EXTENDED "-Wold-style-cast -isystem ${Boost_INCLUDE_DIR}")
-set (PARAMETER_COMPILERFLAG_OLDSTYLECAST "-Wold-style-cast")
-set (PARAMETER_COMPILERFLAG_GENERICWARNINGS "-Wno-attributes -Wall")
-set (PARAMETER_COMPILERFLAG_EXTRAWARNINGS "-Wextra -Wsign-promo")
-set (PARAMETER_COMPILERFLAG_STRICT "-Werror -Wno-error=old-style-cast -Wno-error=deprecated-declarations -fdiagnostics-show-option")
-IF (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  include(CheckCXXCompilerFlag) #this include should be safe
-  CHECK_CXX_COMPILER_FLAG(${PARAMETER_COMPILERFLAG_OLDSTYLECAST_EXTENDED} Compiler_old-style-cast_supported)
-  IF (Compiler_old-style-cast_supported)
-    EXEC_PROGRAM(${CMAKE_CXX_COMPILER}
-      ARGS --version
-      OUTPUT_VARIABLE WLBUILD_COMPILERVERSION
-    )
-    STRING(REGEX REPLACE ".*([0-9])\\.([0-9])\\.([0-9]).*" "\\1.\\2.\\3" WLBUILD_COMPILERVERSION_REP ${WLBUILD_COMPILERVERSION})
-    IF (WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.2" OR WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.1")
-      message("===== ATTENTION ===================================================")
-      message("Your compiler has been identified as GCC 4.3.1 or GCC 4.3.2")
-      message(" ")
-      message("There is a bug regarding this version, see http://gcc.gnu.org/bugzilla/show_bug.cgi?id=38000")
-      message("and https://bugs.launchpad.net/widelands/+bug/549479 for details.")
-      message("Build will disable -isystem usage, expect lots of warnings from Boost header files.")
-      message("Widelands should still compile and link correctly.")
-      message("If the compiler identification is correct, please consider updating your gcc.")
-      message("This warning message will disappear at GCC 4.3.3 and higher.")
-      message("If you feel this is wrong, please submit a bug with widelands (not with GCC!)")
-      message("and add the following information how cmake sees your C++ compiler:")
-      message(" ")
-      message("--------------------------------")
-      message("${WLBUILD_COMPILERVERSION}")
-      message("--------------------------------")
-      message(" ")
-      message("Thank you for taking your time to read this.")
-      message("===================================================================")
-      set (WL_COMPILERFLAG_OLDSTYLECAST " ${PARAMETER_COMPILERFLAG_OLDSTYLECAST}") #the space is on purpose!
-    ELSE (WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.2" OR WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.1")
-      set (WL_COMPILERFLAG_OLDSTYLECAST " ${PARAMETER_COMPILERFLAG_OLDSTYLECAST_EXTENDED}") #the space is on purpose!
-    ENDIF (WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.2" OR WLBUILD_COMPILERVERSION_REP STREQUAL "4.3.1")
-  ENDIF (Compiler_old-style-cast_supported)
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-unreachable-code")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-documentation")
 
-  CHECK_CXX_COMPILER_FLAG(${PARAMETER_COMPILERFLAG_GENERICWARNINGS} Compiler_generic_warnings_supported)
-  IF (Compiler_generic_warnings_supported)
-    set (WL_COMPILERFLAG_GENERICWARNINGS " ${PARAMETER_COMPILERFLAG_GENERICWARNINGS}") #the space is on purpose!
-  ENDIF (Compiler_generic_warnings_supported)
-  IF (WL_EXTRAWARNINGS)
-    CHECK_CXX_COMPILER_FLAG(${PARAMETER_COMPILERFLAG_EXTRAWARNINGS} Compiler_extra_warnings_supported)
-    IF (Compiler_extra_warnings_supported)
-      set (WL_COMPILERFLAG_EXTRAWARNINGS " ${PARAMETER_COMPILERFLAG_EXTRAWARNINGS}") #the space is on purpose!
-    ENDIF (Compiler_extra_warnings_supported)
-  ENDIF (WL_EXTRAWARNINGS)
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=deprecated")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=non-pod-varargs")
 
-  IF (WL_STRICT)
-    CHECK_CXX_COMPILER_FLAG(${PARAMETER_COMPILERFLAG_STRICT} Compiler_strict_mode_supported)
-    IF (Compiler_strict_mode_supported)
-      set (WL_COMPILERFLAG_STRICT " ${PARAMETER_COMPILERFLAG_STRICT}") #the space is on purpose!
-      message(STATUS "Strict mode enabled, expect compilation errors instead of compilation warnings!")
-    ENDIF (Compiler_strict_mode_supported)
-  ENDIF (WL_STRICT)
-ENDIF (CMAKE_BUILD_TYPE STREQUAL "Debug")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Qunused-arguments")
 
-# CMAKE only defines "-g", but we need -DDEBUG also, and we need -DNOPARACHUTE (for SDL) in Debug
-set (CMAKE_CXX_FLAGS_DEBUG "-g -DDEBUG -DNOPARACHUTE${WL_COMPILERFLAG_OLDSTYLECAST}${WL_COMPILERFLAG_GENERICWARNINGS}${WL_COMPILERFLAG_EXTRAWARNINGS}${WL_COMPILERFLAG_STRICT}" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wint-to-void-pointer-cast")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.8)
+      wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Winconsistent-missing-override")
+  endif()
+else()
+  # Assuming GCC 4.8 or higher.
+  if(WIN32)
+    # This is needed for getenv().
+    wl_add_flag(WL_GENERIC_CXX_FLAGS "-std=gnu++11")
+  else()
+    # SDL and MinGW both declare 'unsigned int __builtin_ia32_crc32qi(unsigned int, unsigned char)', resulting in lots of warnings. So, we can't have this flag in Windows.
+    wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wredundant-decls")
+  endif()
 
-# CMAKE defines "-O3 -DNDEBUG", but we better say -O2 (see gcc manual)
-set (CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+  # Because of: https://svn.boost.org/trac/boost/ticket/9240.
+  wl_add_flag(WL_GENERIC_CXX_FLAGS "-fext-numeric-literals")
 
-#If building with MSVC, then check for 3rdparty libs
-if (DEFINED MSVC)
-  set (WL_3RDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty" CACHE STRING "Widelands 3rdparty dir")
-  set (CMAKE_INCLUDE_PATH "${WL_3RDPARTY_DIR}/include;${WL_3RDPARTY_DIR}/include/sdl")
-  set (CMAKE_LIBRARY_PATH "${WL_3RDPARTY_DIR}/lib")
-
-  add_definitions( -Dand=&& -Dor=|| -Dnot=! -Dxor=^ )
-  add_definitions( -Dstrcasecmp=_stricmp )
-  add_definitions( -Dstrncasecmp=_strnicmp )
-  add_definitions( -Dsnprintf=_snprintf )
-  add_definitions( -Drint=floor )
-  add_definitions( -Dstrtoll=_strtoi64 )
-  add_definitions( -Dstrtoull=_strtoui64 )
-  add_definitions( -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS )
-  add_definitions( -Dssize_t=size_t )
-  add_definitions( -Dmkdir=_mkdir )
-  add_definitions( -DREDIRECT_OUTPUT )
-
-  # Automatic linking for boost requires setting lib dir and clearing Boost_LIBRARIES
-  LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
-  set(Boost_LIBRARIES "")
-  include_directories(${Boost_INCLUDE_DIR})
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wall")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wpedantic")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wdeprecated-declarations")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wextra")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wformat")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wformat-nonliteral")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wformat-security")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wformat-y2k")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Winit-self")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Winvalid-pch")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wlogical-op")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wmissing-include-dirs")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wno-undef")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wold-style-cast")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Woverlength-strings")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wpacked")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wpointer-arith")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wsign-promo")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wsync-nand")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wtrampolines")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wundef")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wunused")
+  wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Wunused-macros")
+endif()
 
 
-  find_library(INTL_LIBRARY NAMES intl libintl)
+# Turn some warnings into errors.
+wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=format-security")
+wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=return-type")
+wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=shadow")
+wl_add_flag(WL_COMPILE_DIAGNOSTICS "-Werror=uninitialized")
 
-  set (MSVC_DISABLE_WARNINGS "/wd4290 /wd4800 /wo4373 /wd4355")
-  # CMAKE only defines "-g", but we need -DDEBUG also, and we need -DNOPARACHUTE (for SDL) in Debug
-  set (CMAKE_CXX_FLAGS_DEBUG " -DDEBUG -DNOPARACHUTE /MTd /Zi /D_DEBUG ${MSVC_DISABLE_WARNINGS}" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+IF (WIN32)
+  add_definitions(-DMINGW_HAS_SECURE_API -DWIN32_LEAN_AND_MEAN -D__STDC_FORMAT_MACROS -D__USE_MINGW_ANSI_STDIO)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 4)
+    set (CMAKE_EXE_LINKER_FLAGS "-Wl,--large-address-aware" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+    message (STATUS "Enabled large address awareness on mingw32")
+  else (CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message (STATUS "Detected mingw32-w64")
+  endif (CMAKE_SIZEOF_VOID_P EQUAL 4)
+endif (WIN32)
 
-  # CMAKE defines "-O3 -DNDEBUG", but we better say -O2 (see gcc manual)
-  set (CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG /MT /GL ${MSVC_DISABLE_WARNINGS}" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
+# on BSD this must be explicitly linked
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+  # Not needed on Debian GNU/kFreeBSD..
+  if (NOT CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
+    find_library(EXECINFO_LIBRARY NAMES execinfo)
+  endif (NOT CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
 
-  set (CMAKE_EXE_LINKER_FLAGS_DEBUG "/debug /LTCG /NODEFAULTLIB:libcmt.lib" CACHE STRING "Set by widelands CMakeLists.txt" FORCE)
-
-else (DEFINED MSVC)
-  set (HAVE_VARARRAY TRUE CACHE BOOL "Use variable length arrays to improve performance. Requires gcc." )
-endif (DEFINED MSVC)
-
-IF (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  message (STATUS "Using compiler flags: ${CMAKE_CXX_FLAGS_DEBUG}")
-ELSE (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  message (STATUS "Using compiler flags: ${CMAKE_CXX_FLAGS_RELEASE}")
-ENDIF (CMAKE_BUILD_TYPE STREQUAL "Debug")
-
-if (DEFINED WL_3RDPARTY_DIR)
-  set (CMAKE_INCLUDE_PATH "${WL_3RDPARTY_DIR}/include;${WL_3RDPARTY_DIR}/include/sdl")
-  set (CMAKE_LIBRARY_PATH "${WL_3RDPARTY_DIR}/lib")
-endif (DEFINED WL_3RDPARTY_DIR)
-
-find_package(GGZ_Core REQUIRED)
-include_directories(${GGZ_CORE_INCLUDE_DIR})
-add_definitions("-DUSE_GGZ")
-
-#on freeBSD this must be explicitely linked
-if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD") 
-  find_library(EXECINFO_LIBRARY NAMES execinfo)
-endif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-
-
-# Check for opengl
-# TODO Check for SDL_opengl.h and add to include path
-find_package(OpenGL)
-if (OPENGL_FOUND)
-  # OpenGL Headers are not needed directly. Instead SDL_opengl.h should be searched
-  add_definitions("-DUSE_OPENGL")
-  find_package(GLEW)
-  if (GLEW_FOUND)
-    add_definitions(${GLEW_EXTRA_DEFINITIONS})
-  else (GLEW FOUND)
-    message (STATUS "GLEW library not found, check your libraries path and installed packages!")
-  endif (GLEW_FOUND)
-else (OPENGL_FOUND)
-  message (STATUS "OpenGL support disabled, check your libraries path and installed packages!")
-endif (OPENGL_FOUND)
-
-# ...but using MAJOR, MINOR and PATCH
-if (DEFINED WL_VERSION_MAJOR)
-	set (CPACK_PACKAGE_VERSION_MAJOR ${WL_VERSION_MAJOR})
-
-	# Until 1.x.x set standard VERSION => "BuildXX"
-	if (WL_VERSION_MAJOR STREQUAL "0")
-		if (DEFINED WL_VERSION_MINOR)
-			set (WL_VERSION Build${WL_VERSION_MINOR})
-			set (CPACK_PACKAGE_VERSION_MINOR ${WL_VERSION_MINOR})
-			if (DEFINED WL_VERSION_PATCH)
-				set (WL_VERSION ${WL_VERSION}.${WL_VERSION_PATCH})
-				set (CPACK_PACKAGE_VERSION_PATCH ${WL_VERSION_PATCH})
-			else (DEFINED WL_VERSION_PATCH)
-				set (CPACK_PACKAGE_VERSION_PATCH 0)
-			endif (DEFINED WL_VERSION_PATCH)
-			if (DEFINED WL_VERSION_ADDITION)
-				set (WL_VERSION ${WL_VERSION}${WL_VERSION_ADDITION})
-			endif (DEFINED WL_VERSION_ADDITION)
-		else (DEFINED WL_VERSION_MINOR)
-			set (WL_VERSION "NO BUILD ID")
-		endif (DEFINED WL_VERSION_MINOR)
-
-	# from 1.x.x on:
-	else (WL_VERSION_MAJOR STREQUAL "0")
-		set (WL_VERSION ${WL_VERSION_MAJOR})
-		if (DEFINED WL_VERSION_MINOR)
-			set (WL_VERSION ${WL_VERSION}.${WL_VERSION_MINOR})
-			set (CPACK_PACKAGE_VERSION_MINOR ${WL_VERSION_MINOR})
-			if (DEFINED WL_VERSION_PATCH)
-				set (WL_VERSION ${WL_VERSION}.${WL_VERSION_PATCH})
-				set (CPACK_PACKAGE_VERSION_PATCH ${WL_VERSION_PATCH})
-			else (DEFINED WL_VERSION_PATCH)
-				set (CPACK_PACKAGE_VERSION_PATCH 0)
-			endif (DEFINED WL_VERSION_PATCH)
-			if (DEFINED WL_VERSION_ADDITION)
-				set (WL_VERSION ${WL_VERSION}${WL_VERSION_ADDITION})
-			endif (DEFINED WL_VERSION_ADDITION)
-		else (DEFINED WL_VERSION_MINOR)
-			set (CPACK_PACKAGE_VERSION_MINOR 0)
-		endif (DEFINED WL_VERSION_MINOR)
-	endif (WL_VERSION_MAJOR STREQUAL "0")
-	# Needed - else detect_revision.py will still use bzr or even crash, if
-	# Widelands is compiled in a bzr export
-	file (WRITE WL_RELEASE "${WL_VERSION}")
-endif (DEFINED WL_VERSION_MAJOR)
+  # OpenBSD needs the X11 include directory in order to find GL/glu.h
+  if (CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+    find_package(X11 REQUIRED)
+    include_directories(${X11_INCLUDE_DIR})
+  endif ()
+endif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
 
 if (NOT DEFINED WL_VERSION)
-  add_custom_target (
-    BzrRevision ALL
-    COMMAND ${CMAKE_COMMAND} -DWL_INSTALL_PREFIX=${WL_INSTALL_PREFIX} -DWL_INSTALL_BINDIR=${WL_INSTALL_BINDIR} -DWL_INSTALL_DATADIR=${WL_INSTALL_DATADIR} -DWL_INSTALL_LOCALEDIR=${WL_INSTALL_LOCALEDIR} -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/BzrRevision.cmake
-  )
+  include (${CMAKE_SOURCE_DIR}/cmake/BzrRevision.cmake)
 else (NOT DEFINED WL_VERSION)
   add_custom_target (
     InputRevision ALL
-    COMMAND ${CMAKE_COMMAND} -DWL_INSTALL_PREFIX=${WL_INSTALL_PREFIX} -DWL_INSTALL_BINDIR=${WL_INSTALL_BINDIR} -DWL_INSTALL_DATADIR=${WL_INSTALL_DATADIR} -DWL_INSTALL_LOCALEDIR=${WL_INSTALL_LOCALEDIR} -DWL_VERSION=${WL_VERSION} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/InputRevision.cmake
+    COMMAND ${CMAKE_COMMAND} -DWL_INSTALL_BASEDIR=${WL_INSTALL_BASEDIR} -DWL_VERSION=${WL_VERSION} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/InputRevision.cmake
   )
 endif (NOT DEFINED WL_VERSION)
 
+# Enable testing.
+if (OPTION_BUILD_TESTS)
+  include(CTest)
+  enable_testing()
+
+  # Run a test after a normal compile. This magic is needed as 'make test' will
+  # not rebuild tests:
+  # https://stackoverflow.com/questions/733475/cmake-ctest-make-test-doesnt-build-tests
+  add_custom_target(_run_all_tests ALL
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS wl_tests
+  )
+endif (OPTION_BUILD_TESTS)
+
 install (
   FILES ${CMAKE_CURRENT_BINARY_DIR}/VERSION
-  DESTINATION ${WL_INSTALL_DATADIR}
+  DESTINATION ${WL_INSTALL_BASEDIR}
   CONFIGURATIONS Debug;Release
   COMPONENT CoreVersionFile
 )
 
-include_directories(src ${CMAKE_CURRENT_BINARY_DIR}/src)
-
-include(CheckIncludeFile)
-
-find_package(PNG REQUIRED)
-include_directories(${PNG_INCLUDE_DIR})
-
-find_package(ZLIB REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIR})
-
-if (APPLE OR WIN32)
-  find_package(intl REQUIRED)
-  include_directories(${INTL_INCLUDE_DIR})
-endif (APPLE OR WIN32)
-
-find_package(SDL REQUIRED)
-include_directories(${SDL_INCLUDE_DIR})
-
-find_package(SDL_image REQUIRED)
-include_directories(${SDLIMAGE_INCLUDE_DIR})
-
-find_package(SDL_mixer REQUIRED)
-include_directories(${SDLMIXER_INCLUDE_DIR})
-
-find_package(SDL_net REQUIRED)
-include_directories(${SDLNET_INCLUDE_DIR})
-
-find_package(SDL_ttf REQUIRED)
-include_directories(${SDLTTF_INCLUDE_DIR})
-
-find_package(SDL_gfx REQUIRED)
-include_directories(${SDLGFX_INCLUDE_DIR})
-
-find_package(Lua51 REQUIRED)
-include_directories(${LUA_INCLUDE_DIR})
-
-IF (WIN32)
-  SET(GUI_TYPE WIN32)
-ENDIF (WIN32)
-
-#configure_file (src/config.h.cmake src/config.h)
-#configure_file (src/build_info.cc.cmake src/build_info.cc)
-
+# Installation.
 add_subdirectory(doc)
-add_subdirectory(po)
+if(OPTION_BUILD_TRANSLATIONS)
+  add_subdirectory(po)
+endif(OPTION_BUILD_TRANSLATIONS)
 add_subdirectory(src)
 
 # install files to the correct locations here
 install(
   DIRECTORY
-    campaigns
-    fonts
-    global
-    maps
-    music
-    sound
-    tribes
-    txts
-    worlds
-    pics
-    scripting
+    data/ai
+    data/campaigns
+    data/i18n
+    data/images
+    data/scripting
+    data/shaders
+    data/templates
+    data/tribes
+    data/txts
+    data/world
   DESTINATION ${WL_INSTALL_DATADIR}
   CONFIGURATIONS Debug;Release
   COMPONENT CoreDataFiles
+)
+
+install(
+  DIRECTORY
+    data/maps
+  DESTINATION ${WL_INSTALL_DATADIR}
+  CONFIGURATIONS Debug;Release
+  COMPONENT MapFiles
+)
+
+install(
+  DIRECTORY
+    data/music
+    data/sound
+  DESTINATION ${WL_INSTALL_DATADIR}
+  CONFIGURATIONS Debug;Release
+  COMPONENT MusicFiles
 )
 
 install(
@@ -418,7 +374,7 @@ install(
     COPYING
     CREDITS
     ChangeLog
-  DESTINATION ${WL_INSTALL_DATADIR}
+  DESTINATION ${WL_INSTALL_BASEDIR}
   CONFIGURATIONS Debug;Release
   COMPONENT CoreLicenseFiles
 )
@@ -426,15 +382,13 @@ install(
 install(
   DIRECTORY
     doc
-  DESTINATION ${WL_INSTALL_DATADIR}
+  DESTINATION ${WL_INSTALL_BASEDIR}
   CONFIGURATIONS Debug
   COMPONENT DocFiles
   PATTERN "CMakeLists.txt" EXCLUDE
 )
 
-find_package (PythonInterp REQUIRED)
-
-set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES locale)
+set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES ${WL_INSTALL_DATADIR}/locale)
 
 install(
   DIRECTORY
@@ -444,8 +398,6 @@ install(
   COMPONENT CoreLanguageFiles
 )
 
-set (CPACK_PACKAGE_FILE_NAME widelands-${WL_VERSION})
-set (CPACK_COMPONENTS_ALL ExecutableFiles CoreDataFiles DocFiles CoreLanguageFiles CoreVersionFile CoreLicenseFiles)
-set (CPACK_GENERATOR "TGZ")
-set (CPACK_SOURCE_GENERATOR "TGZ")
-include(CPack)
+if (UNIX AND NOT APPLE)
+  add_subdirectory(xdg)
+endif (UNIX AND NOT APPLE)

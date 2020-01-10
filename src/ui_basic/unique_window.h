@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006, 2008-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,60 +13,69 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_UNIQUE_WINDOW_H
-#define UI_UNIQUE_WINDOW_H
+#ifndef WL_UI_BASIC_UNIQUE_WINDOW_H
+#define WL_UI_BASIC_UNIQUE_WINDOW_H
 
-#include "window.h"
-#include "button.h"
+#include <functional>
 
-#include <boost/function.hpp>
+#include <boost/signals2.hpp>
 
+#include "ui_basic/button.h"
+#include "ui_basic/window.h"
 
 namespace UI {
-struct Panel;
-
+class Panel;
 
 /**
  * Can only be created once, when it is requested to
  * open a second one, it will implicitly kill the old one
-*/
+ */
 struct UniqueWindow : public Window {
-
 	struct Registry {
-		UniqueWindow * window;
-		boost::function<void()> onCreate;
-		boost::function<void()> onDelete;
-		boost::function<void(Registry &)> constr;
+		UniqueWindow* window;
+
+		// Whenever Registry::toggle() is called, a window will be created using
+		// 'open_window' or if one is open already, the existing one will be
+		// closed.
+		std::function<void()> open_window;
+
+		// Triggered when the window opens
+		boost::signals2::signal<void()> opened;
+		// Triggered when the window closes
+		boost::signals2::signal<void()> closed;
 
 		void create();
 		void destroy();
 		void toggle();
 
 		int32_t x, y;
+		bool valid_pos;
 
-		Registry() : window(0), x(-1), y(-1) {}
+		Registry() : window(nullptr), x(0), y(0), valid_pos(false) {
+		}
 		~Registry();
 	};
 
-	UniqueWindow
-		(Panel             * parent,
-		 std::string const & name,
-		 Registry          *,
-		 int32_t w, int32_t h,
-		 std::string const & title);
+	UniqueWindow(Panel* parent,
+	             const std::string& name,
+	             Registry*,
+	             int32_t w,
+	             int32_t h,
+	             const std::string& title);
 	virtual ~UniqueWindow();
 
-	bool get_usedefaultpos() {return m_usedefaultpos;}
+	bool get_usedefaultpos() {
+		return usedefaultpos_;
+	}
 
 private:
-	Registry * m_registry;
-	bool       m_usedefaultpos;
+	Registry* registry_;
+	bool usedefaultpos_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_UNIQUE_WINDOW_H

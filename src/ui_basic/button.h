@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006, 2008-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,151 +13,165 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_BUTTON_H
-#define UI_BUTTON_H
+#ifndef WL_UI_BASIC_BUTTON_H
+#define WL_UI_BASIC_BUTTON_H
 
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
+#include <boost/signals2.hpp>
 
-#include "constants.h"
-#include "panel.h"
-#include "m_signal.h"
-
-#include "rgbcolor.h"
+#include "graphic/color.h"
+#include "graphic/styles/button_style.h"
+#include "ui_basic/panel.h"
 
 namespace UI {
 
 struct Font;
 
+enum class ButtonDisableStyle {
+	kMonochrome = 2,   // Greyed out. Can be combined with the other 2 styles.
+	kPermpressed = 4,  // Button will appear pressed.
+	kFlat = 8,         // Button will appear flat.
+};
+inline ButtonDisableStyle operator&(ButtonDisableStyle a, ButtonDisableStyle b) {
+	return static_cast<ButtonDisableStyle>(static_cast<int>(a) & static_cast<int>(b));
+}
+inline ButtonDisableStyle operator|(ButtonDisableStyle a, ButtonDisableStyle b) {
+	return static_cast<ButtonDisableStyle>(static_cast<int>(a) | static_cast<int>(b));
+}
+
 /// This is simply a button. Override void clicked() to react to the click.
 /// This is all that is needed in most cases, but if there is a need to give a
 /// callback function to the button, there are some templates for that below.
 struct Button : public NamedPanel {
-	Button /// for textual buttons
-		(Panel * const parent,
-		 std::string const & name,
-		 int32_t const x, int32_t const y, uint32_t const w, uint32_t const h,
-		 PictureID const background_pictute_id,
-		 std::string const & title_text,
-		 std::string const & tooltip_text = std::string(),
-		 bool const _enabled = true,
-		 bool const flat    = false);
-	Button /// for pictorial buttons
-		(Panel * const parent,
-		 std::string const & name,
-		 const int32_t x, const int32_t y, const uint32_t w, const uint32_t h,
-		 const PictureID background_pictute_id,
-		 const PictureID foreground_picture_id,
-		 std::string const & tooltip_text = std::string(),
-		 bool const _enabled = true,
-		 bool const flat     = false);
-	~Button();
+	enum class VisualState {
+		kRaised,       // Normal raised Button
+		kPermpressed,  // Button will appear pressed
+		kFlat          // Flat button with simple coloured outline
+	};
 
-	void set_pic(PictureID picid);
-	void set_title(const std::string &);
-	const std::string & get_title() const throw () {return m_title;}
+	enum class ImageMode {
+		kShrink,   // Shrink foreground image to fit into the button
+		kUnscaled  // Show the foreground image without any scaling
+	};
 
-	bool enabled() const {return m_enabled;}
+private:
+	Button  // Common constructor
+	   (Panel* const parent,
+	    const std::string& name,
+	    int32_t const x,
+	    int32_t const y,
+	    uint32_t const w,
+	    uint32_t const h,
+	    UI::ButtonStyle style,
+	    const Image* title_image,
+	    const std::string& title_text,
+	    const std::string& tooltip_text,
+	    UI::Button::VisualState state,
+	    UI::Button::ImageMode mode);
+
+public:
+	/**
+	 * Text conventions: Title Case for the 'title_text', Sentence case for the 'tooltip_text'
+	 */
+	Button  /// for textual buttons
+	   (Panel* const parent,
+	    const std::string& name,
+	    int32_t const x,
+	    int32_t const y,
+	    uint32_t const w,
+	    uint32_t const h,
+	    UI::ButtonStyle style,
+	    const std::string& title_text,
+	    const std::string& tooltip_text = std::string(),
+	    UI::Button::VisualState state = UI::Button::VisualState::kRaised);
+
+	/**
+	 * Text conventions: Sentence case for the 'tooltip_text'
+	 */
+	Button  /// for pictorial buttons
+	   (Panel* const parent,
+	    const std::string& name,
+	    const int32_t x,
+	    const int32_t y,
+	    const uint32_t w,
+	    const uint32_t h,
+	    UI::ButtonStyle style,
+	    const Image* title_image,
+	    const std::string& tooltip_text = std::string(),
+	    UI::Button::VisualState state = UI::Button::VisualState::kRaised,
+	    UI::Button::ImageMode mode = UI::Button::ImageMode::kShrink);
+	~Button() override;
+
+	void set_pic(const Image* pic);
+	void set_title(const std::string&);
+	const std::string& get_title() const {
+		return title_;
+	}
+
+	bool enabled() const {
+		return enabled_;
+	}
 	void set_enabled(bool on);
-	void set_repeating(bool const on) {m_repeating = on;}
-	void set_draw_caret(bool draw_caret) {m_draw_caret = draw_caret;}
-	void set_font(Font * font) {m_font = font;}
-	bool is_snap_target() const {return true;}
+	void set_repeating(bool const on) {
+		repeating_ = on;
+	}
+	bool is_snap_target() const override {
+		return true;
+	}
 
 	// Drawing and event handlers
-	void draw(RenderTarget &)__attribute__((hot));
-	void think();
+	void draw(RenderTarget&) override;
+	void think() override;
 
-	void handle_mousein(bool inside);
-	bool handle_mousepress  (Uint8 btn, int32_t x, int32_t y);
-	bool handle_mouserelease(Uint8 btn, int32_t x, int32_t y);
-	bool handle_mousemove(Uint8, int32_t, int32_t, int32_t, int32_t);
+	void handle_mousein(bool inside) override;
+	bool handle_mousepress(uint8_t btn, int32_t x, int32_t y) override;
+	bool handle_mouserelease(uint8_t btn, int32_t x, int32_t y) override;
+	bool handle_mousemove(uint8_t, int32_t, int32_t, int32_t, int32_t) override;
 
-	// Set the permanently pressed state of the button
-	void set_perm_pressed(bool state);
+	/// Sets the visual style of the button
+	void set_visual_state(UI::Button::VisualState state);
+	UI::Button::VisualState style() const {
+		return visual_state_;
+	}
 
-	// Set button to flat / not flat
-	void set_flat(bool flat);
-	// If no background is drawn, the button is drawn over the current background
-	void set_draw_flat_background(bool set);
+	/// Sets the visual style of the disabled button
+	void set_disable_style(UI::ButtonDisableStyle input_style);
 
-protected:
-	virtual void clicked() = 0; /// Override this to react on the click.
+	/// Convenience function. If 'pressed', sets the style to kPermpressed, otherwise to kRaised.
+	void set_perm_pressed(bool pressed);
 
-	bool        m_highlighted;    //  mouse is over the button
-	bool        m_pressed;        //  mouse is clicked over the button
-	bool        m_permpressed;    //  button should appear  pressed
-	bool        m_enabled;
-	bool        m_repeating;
-	bool        m_flat;
-	bool        m_draw_flat_background;
+	/// Change the background style of the button.
+	void set_style(UI::ButtonStyle bstyle);
 
-	int32_t     m_time_nextact;
+	/// Convenience function. Toggles between raised and permpressed style
+	void toggle();
 
-	std::string m_title;          //  title string used when _mypic == 0
-
-	PictureID   m_pic_background; //  background texture (picture ID)
-	PictureID   m_pic_custom;     //  custom icon on the button
-	PictureID   m_pic_custom_disabled;
-	Font * m_font;
-
-	RGBColor    m_clr_down; //  color of border while a flat button is "down"
-	bool        m_draw_caret;
-};
-
-
-/// A verion of Button that uses a function object to the the callback.
-struct Callback_Button : public Button {
-	Callback_Button /// for textual buttons
-		(Panel * const parent,
-		 std::string const & name,
-		 const int32_t x, const int32_t y, const uint32_t w, const uint32_t h,
-		 const PictureID background_pictute_id,
-		 boost::function<void()> callback_function,
-		 const std::string & title_text,
-		 std::string const & tooltip_text = std::string(),
-		 bool const _enabled = true,
-		 bool const flat     = false)
-		:
-		Button
-			(parent, name,
-			 x, y, w, h,
-			 background_pictute_id,
-			 title_text,
-			 tooltip_text,
-			 _enabled, flat),
-		_callback_function     (callback_function)
-	{}
-	Callback_Button /// for pictorial buttons
-		(Panel * const parent,
-		 std::string const & name,
-		 const int32_t x, const int32_t y, const uint32_t w, const uint32_t h,
-		 const PictureID background_pictute_id,
-		 const PictureID foreground_picture_id,
-		 boost::function<void()> callback_function,
-		 std::string const & tooltip_text = std::string(),
-		 bool const _enabled = true,
-		 bool const flat     = false)
-		:
-		Button
-			(parent, name,
-			 x, y, w, h,
-			 background_pictute_id,
-			 foreground_picture_id,
-			 tooltip_text,
-			 _enabled, flat),
-		_callback_function     (callback_function)
-	{}
+	boost::signals2::signal<void()> sigclicked;
+	boost::signals2::signal<void()> sigmousein;
+	boost::signals2::signal<void()> sigmouseout;
 
 protected:
-	boost::function<void()> _callback_function;
-	void clicked() {_callback_function();}
+	bool highlighted_;  //  mouse is over the button
+	bool pressed_;      //  mouse is clicked over the button
+	bool enabled_;
+	UI::Button::VisualState visual_state_;
+	UI::ButtonDisableStyle disable_style_;
+	bool repeating_;
+	const UI::Button::ImageMode image_mode_;
+
+	uint32_t time_nextact_;
+
+	std::string title_;         //  title string used when title_image_ == nullptr
+	const Image* title_image_;  //  custom icon on the button
+
+	const UI::ButtonStyleInfo* style_;  // Background color and texture. Not owned.
 };
 
-}
+}  // namespace UI
 
-#endif
+#endif  // end of include guard: WL_UI_BASIC_BUTTON_H

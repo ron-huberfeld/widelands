@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2008, 2010 by the Widelands Development Team
+ * Copyright (C) 2007-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,182 +13,124 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "progresswindow.h"
-
-#include "constants.h"
-#include "graphic/font.h"
-#include "graphic/font_handler.h"
-#include "graphic/rendertarget.h"
-#include "i18n.h"
-#include "io/filesystem/layered_filesystem.h"
-
-#include "container_iterate.h"
+#include "ui_basic/progresswindow.h"
 
 #ifndef _MSC_VER
 #include <sys/time.h>
 #endif
 
-#define PROGRESS_FONT_COLOR_FG        RGBColor(128, 128, 255)
-#define PROGRESS_FONT_COLOR_BG        RGBColor(64, 64, 0)
-#define PROGRESS_FONT_COLOR PROGRESS_FONT_COLOR_FG, PROGRESS_FONT_COLOR_BG
-#define PROGRESS_STATUS_RECT_PADDING  2
-#define PROGRESS_STATUS_BORDER_X      2
-#define PROGRESS_STATUS_BORDER_Y      2
-#define PROGRESS_LABEL_POSITION_Y     90 /* in percents, from top */
+#include "base/i18n.h"
+#include "graphic/font_handler.h"
+#include "graphic/graphic.h"
+#include "graphic/rendertarget.h"
+#include "graphic/text/font_set.h"
+#include "graphic/text_layout.h"
+#include "io/filesystem/layered_filesystem.h"
+
+namespace {
+#define PROGRESS_STATUS_RECT_PADDING 2
+#define PROGRESS_STATUS_BORDER_X 2
+#define PROGRESS_STATUS_BORDER_Y 2
+#define PROGRESS_LABEL_POSITION_Y 90 /* in percents, from top */
+
+}  // namespace
 
 namespace UI {
 
-ProgressWindow::ProgressWindow(const std::string & background)
-	: m_xres(0), m_yres(0),
-	m_background_pic(g_gr->get_no_picture())
-{
+ProgressWindow::ProgressWindow(const std::string& background)
+   : UI::FullscreenWindow(),
+     label_center_(Vector2i::zero()),
+     style_(g_gr->styles().progressbar_style(UI::PanelStyle::kFsMenu)) {
 	set_background(background);
-	step(_("Preparing..."));
+	step(_("Loading…"));
 }
 
 ProgressWindow::~ProgressWindow() {
-	const VisualizationArray & visualizations = m_visualizations;
-	container_iterate_const(VisualizationArray, visualizations, i)
-		(*i.current)->stop(); //  inform visualizations
+	for (IProgressVisualization* visualization : visualizations_) {
+		visualization->stop();  //  inform visualizations
+	}
 }
 
-void ProgressWindow::draw_background
-	(RenderTarget & rt, const uint32_t xres, const uint32_t yres)
-{
-	m_label_center.x = xres / 2;
-	m_label_center.y = yres * PROGRESS_LABEL_POSITION_Y / 100;
-	Rect wnd_rect(Point(0, 0), xres, yres);
+void ProgressWindow::draw(RenderTarget& rt) {
+	FullscreenWindow::draw(rt);
+	// No float division to avoid Texture subsampling.
+	label_center_.x = get_w() / 2;
+	label_center_.y = get_h() * PROGRESS_LABEL_POSITION_Y / 100;
 
-	if
-		(m_background_pic == g_gr->get_no_picture()
-		 or xres != m_xres or yres != m_yres)
-	{
-		// (Re-)Load background graphics
-		// Note that the old pic is freed automatically
-		PictureID const background_original =
-			g_gr->get_picture(PicMod_Menu, m_background.c_str());
+	const uint32_t h = text_height(style_.font());
 
-		PictureID const background_resized  =
-			g_gr->get_resized_picture
-				(background_original, xres, yres,
-				 Graphic::ResizeMode_Loose);
+	label_rectangle_.x = get_w() / 6;
+	label_rectangle_.w = get_w() * 2 / 3;
+	label_rectangle_.y = label_center_.y - h / 2 - PROGRESS_STATUS_RECT_PADDING;
+	label_rectangle_.h = h + 2 * PROGRESS_STATUS_RECT_PADDING;
 
-		m_background_pic = background_resized;
-
-		const uint32_t h = g_fh->get_fontheight (UI_FONT_SMALL);
-		m_label_rectangle.x = xres / 4;
-		m_label_rectangle.w = xres / 2;
-		m_label_rectangle.y =
-		m_label_center.y - h / 2 - PROGRESS_STATUS_RECT_PADDING;
-		m_label_rectangle.h = h + 2 * PROGRESS_STATUS_RECT_PADDING;
-		// remember last resolution
-		m_xres = xres;
-		m_yres = yres;
-	}
-
-	rt.blit(Point(0, 0), m_background_pic);
-
-	Rect border_rect = m_label_rectangle;
+	Recti border_rect = label_rectangle_;
 	border_rect.x -= PROGRESS_STATUS_BORDER_X;
 	border_rect.y -= PROGRESS_STATUS_BORDER_Y;
 	border_rect.w += 2 * PROGRESS_STATUS_BORDER_X;
 	border_rect.h += 2 * PROGRESS_STATUS_BORDER_Y;
 
-	rt.draw_rect(border_rect, PROGRESS_FONT_COLOR_FG);
+	rt.draw_rect(border_rect, style_.font().color());
+	// TODO(GunChleoc): this should depend on actual progress. Add a total steps variable and reuse
+	// the Progressbar class.
+	rt.fill_rect(label_rectangle_, style_.medium_color());
 }
 
 /// Set a picture to render in the background
-void ProgressWindow::set_background(const std::string & file_name) {
-	RenderTarget & rt = *g_gr->get_render_target();
-	if (file_name.size() > 0) {
-		if (g_fs->FileExists(file_name))
-			m_background = file_name;
-		else {
-			// Maybe we should load a background for a specific world?
-			if (g_fs->IsDirectory("worlds/" + file_name)) {
-				filenameset_t files;
-				int32_t intbuf = g_fs->FindFiles
-						(("worlds/" + file_name + "/pics/"),
-						 ("loading_??.jpg"), &files);
-				intbuf = (intbuf == 0) ? -1 : time(0) % intbuf; // some randomness
-				if ((intbuf < 0) | (intbuf > 99))
-					m_background = "pics/progress.png";
-				else {
-					char buf[256];
-					snprintf(buf, sizeof(buf), "%02d.jpg", intbuf);
-					m_background = "worlds/" + file_name + "/pics/loading_" + buf;
-				}
-			} else
-				m_background = "pics/progress.png";
-		}
-	} else
-		m_background = "pics/progress.png";
-	if (m_background_pic != g_gr->get_no_picture()) {
-		m_background_pic = g_gr->get_no_picture();
+void ProgressWindow::set_background(const std::string& file_name) {
+	clear_overlays();
+	if (!file_name.empty() && g_fs->file_exists(file_name)) {
+		add_overlay_image(
+		   file_name, FullscreenWindow::Alignment(UI::Align::kCenter, UI::Align::kCenter));
+	} else {
+		add_overlay_image("images/loadscreens/progress.png",
+		                  FullscreenWindow::Alignment(UI::Align::kLeft, UI::Align::kBottom));
 	}
-	draw_background(rt, g_gr->get_xres(), g_gr->get_yres());
-	update(true);
+	draw(*g_gr->get_render_target());
 }
 
-void ProgressWindow::step(const std::string & description) {
-	RenderTarget & rt = *g_gr->get_render_target();
-
-	const uint32_t xres = g_gr->get_xres();
-	const uint32_t yres = g_gr->get_yres();
-
+void ProgressWindow::step(const std::string& description) {
+	RenderTarget& rt = *g_gr->get_render_target();
 	// always repaint the background first
-	draw_background(rt, xres, yres);
+	draw(rt);
 
-	rt.fill_rect(m_label_rectangle, PROGRESS_FONT_COLOR_BG);
+	std::shared_ptr<const UI::RenderedText> rendered_text =
+	   UI::g_fh->render(as_richtext_paragraph(description, style_.font()));
+	UI::center_vertically(rendered_text->height(), &label_center_);
+	rendered_text->draw(rt, label_center_, UI::Align::kCenter);
 
-	UI::TextStyle ts(UI::TextStyle::ui_small());
-	ts.fg = PROGRESS_FONT_COLOR_FG;
-	UI::g_fh->draw_text(rt, ts, m_label_center, description, Align_Center);
-	g_gr->update_rectangle(m_label_rectangle);
-
+	// Pump events to prevent "not responding" on windows & "beach ball" on macOS
+	SDL_PumpEvents();
 	update(true);
 }
 
 void ProgressWindow::update(bool const repaint) {
-	VisualizationArray & visualizations = m_visualizations;
-	container_iterate_const(VisualizationArray, visualizations, i)
-		(*i.current)->update(repaint); //  let visualizations do their work
-
-	g_gr->refresh(false);
-}
-
-/**
- * Display a loader step description
- * std:string style format broke format argument list
- * on windows visual studio.
- */
-void ProgressWindow::stepf(const char * format, ...) {
-	char buffer[1024];
-	va_list va;
-	va_start(va, format);
-	vsnprintf(buffer, sizeof(buffer), format, va);
-	va_end(va);
-	step (buffer);
+	for (IProgressVisualization* visualization : visualizations_) {
+		visualization->update(repaint);  //  let visualizations do their work
+	}
+	g_gr->refresh();
 }
 
 /// Register additional visualization (tips/hints, animation, etc)
-void ProgressWindow::add_visualization(IProgressVisualization * const instance)
-{
+void ProgressWindow::add_visualization(IProgressVisualization* const instance) {
 	// just add to collection
-	m_visualizations.push_back(instance);
+	visualizations_.push_back(instance);
 }
 
-void ProgressWindow::remove_visualization(IProgressVisualization * instance) {
-	VisualizationArray & visualizations = m_visualizations;
-	container_iterate(VisualizationArray, visualizations, i)
-		if (*i.current == instance) {
-			m_visualizations.erase (i.current);
+void ProgressWindow::remove_visualization(IProgressVisualization* instance) {
+	VisualizationArray& visualizations = visualizations_;
+
+	for (VisualizationArray::iterator vis_iter = visualizations.begin();
+	     vis_iter != visualizations.end(); ++vis_iter) {
+
+		if (*vis_iter == instance) {
+			visualizations_.erase(vis_iter);
 			break;
 		}
+	}
 }
-
-}
+}  // namespace UI

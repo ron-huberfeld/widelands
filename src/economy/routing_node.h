@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,43 +13,43 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef S__ROUTING_NODE_H
-#define S__ROUTING_NODE_H
+#ifndef WL_ECONOMY_ROUTING_NODE_H
+#define WL_ECONOMY_ROUTING_NODE_H
 
 #include <vector>
 
-#include "cookie_priority_queue.h"
+#include "logic/cookie_priority_queue.h"
+#include "logic/map_objects/tribes/wareworker.h"
 #include "logic/widelands_geometry.h"
 
 namespace Widelands {
 
 struct Flag;
-class RoutingNode;
-struct Road;
+struct RoutingNode;
+struct RoadBase;
 
-/***
- * /todo The get functions should be declared const
+/**
+ * @see RoutingNode::get_neighbours
  */
 struct RoutingNodeNeighbour {
-	RoutingNodeNeighbour(RoutingNode * const f, int32_t const cost) :
-		m_nb(f), m_cost(cost)
-	{}
-	RoutingNode * get_neighbour() {
-		return m_nb;
+	RoutingNodeNeighbour(RoutingNode* const f, int32_t const cost) : nb_(f), cost_(cost) {
+	}
+	RoutingNode* get_neighbour() const {
+		return nb_;
 	}
 	int32_t get_cost() const {
-		return m_cost;
+		return cost_;
 	}
 
 private:
-	RoutingNode * m_nb;
-	int32_t m_cost; /// Cost to get from me to the neighbour (Cost for road)
+	RoutingNode* nb_;
+	int32_t cost_;  /// Cost to get from me to the neighbour (Cost for road)
 };
-typedef std::vector<RoutingNodeNeighbour> RoutingNodeNeighbours;
+using RoutingNodeNeighbours = std::vector<RoutingNodeNeighbour>;
 
 /**
  * A routing node is a field with a cost attached to it
@@ -60,42 +60,61 @@ typedef std::vector<RoutingNodeNeighbour> RoutingNodeNeighbours;
  */
 struct RoutingNode {
 	struct LessCost {
-		bool operator()(const RoutingNode & a, const RoutingNode & b) const {
-			return a.cost() < b.cost();
+		bool operator()(const RoutingNode& a, const RoutingNode& b, WareWorker type) const {
+			return a.cost(type) < b.cost(type);
 		}
 	};
-	typedef cookie_priority_queue<RoutingNode, LessCost> Queue;
+	using Queue = CookiePriorityQueue<RoutingNode, LessCost>;
 
-// The variables are only protected so that Test classes can use them
-protected:
-	friend struct Economy;
-	friend struct Router;
-	uint32_t      mpf_cycle;
-	Queue::cookie mpf_cookie;
-	int32_t       mpf_realcost; ///< real cost of getting to this flag
-	RoutingNode * mpf_backlink; ///< flag where we came from
-	int32_t       mpf_estimate; ///< estimate of cost to destination
+	uint32_t mpf_cycle_ware;
+	Queue::Cookie mpf_cookie_ware;
+	int32_t mpf_realcost_ware;       ///< real cost of getting to this flag
+	RoutingNode* mpf_backlink_ware;  ///< flag where we came from
+	int32_t mpf_estimate_ware;       ///< estimate of cost to destination
+
+	uint32_t mpf_cycle_worker;
+	Queue::Cookie mpf_cookie_worker;
+	int32_t mpf_realcost_worker;       ///< real cost of getting to this flag
+	RoutingNode* mpf_backlink_worker;  ///< flag where we came from
+	int32_t mpf_estimate_worker;       ///< estimate of cost to destination
 
 public:
-	RoutingNode() : mpf_cycle(0),
-		mpf_realcost(0), mpf_backlink(0), mpf_estimate(0) {}
-	virtual ~RoutingNode() {}
-
-	void reset_path_finding_cycle() {
-		mpf_cycle = 0;
+	RoutingNode()
+	   : mpf_cycle_ware(0),
+	     mpf_realcost_ware(0),
+	     mpf_backlink_ware(nullptr),
+	     mpf_estimate_ware(0),
+	     mpf_cycle_worker(0),
+	     mpf_realcost_worker(0),
+	     mpf_backlink_worker(nullptr),
+	     mpf_estimate_worker(0) {
+	}
+	virtual ~RoutingNode() {
 	}
 
-	int32_t cost() const {return mpf_realcost + mpf_estimate;}
-	Queue::cookie & cookie() {return mpf_cookie;}
+	void reset_path_finding_cycle(WareWorker which) {
+		switch (which) {
+		case wwWARE:
+			mpf_cycle_ware = 0;
+			break;
+		case wwWORKER:
+			mpf_cycle_worker = 0;
+			break;
+		}
+	}
 
-	virtual Flag & base_flag() = 0;
-	virtual int32_t get_waitcost() const = 0;
-	virtual void get_neighbours(RoutingNodeNeighbours &) = 0;
-	virtual Coords get_position() const = 0;
+	int32_t cost(WareWorker which) const {
+		return (which == wwWARE) ? mpf_realcost_ware + mpf_estimate_ware :
+		                           mpf_realcost_worker + mpf_estimate_worker;
+	}
+	Queue::Cookie& cookie(WareWorker which) {
+		return which == wwWARE ? mpf_cookie_ware : mpf_cookie_worker;
+	}
+
+	virtual Flag& base_flag() = 0;
+	virtual void get_neighbours(WareWorker type, RoutingNodeNeighbours&) = 0;
+	virtual const Coords& get_position() const = 0;
 };
+}  // namespace Widelands
 
-}
-
-#endif
-
-
+#endif  // end of include guard: WL_ECONOMY_ROUTING_NODE_H

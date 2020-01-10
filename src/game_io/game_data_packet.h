@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,22 +13,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_DATA_PACKET_H
-#define GAME_DATA_PACKET_H
+#ifndef WL_GAME_IO_GAME_DATA_PACKET_H
+#define WL_GAME_IO_GAME_DATA_PACKET_H
 
-#include "wexception.h"
+#include "base/wexception.h"
 
-struct FileSystem;
+class FileSystem;
 
 namespace Widelands {
 
-struct Game;
-struct Map_Map_Object_Loader;
-struct Map_Map_Object_Saver;
+class Game;
+class MapObjectLoader;
+struct MapObjectSaver;
 
 /*
 ========================================
@@ -38,12 +38,13 @@ saved game file. it is an abstract base class
 
 ========================================
 */
-struct Game_Data_Packet {
-	virtual ~Game_Data_Packet() {}
-	virtual void Read (FileSystem &, Game &, Map_Map_Object_Loader * = 0) = 0;
-	virtual void Write(FileSystem &, Game &, Map_Map_Object_Saver  * = 0) = 0;
+class GameDataPacket {
+public:
+	virtual ~GameDataPacket() {
+	}
+	virtual void read(FileSystem&, Game&, MapObjectLoader* = nullptr) = 0;
+	virtual void write(FileSystem&, Game&, MapObjectSaver* = nullptr) = 0;
 };
+}  // namespace Widelands
 
-}
-
-#endif
+#endif  // end of include guard: WL_GAME_IO_GAME_DATA_PACKET_H

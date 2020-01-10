@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2003-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,102 +13,145 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_TABPANEL_H
-#define UI_TABPANEL_H
-
-#include "panel.h"
+#ifndef WL_UI_BASIC_TABPANEL_H
+#define WL_UI_BASIC_TABPANEL_H
 
 #include <vector>
 
+#include <boost/signals2.hpp>
+
+#include "ui_basic/panel.h"
+
 namespace UI {
+
+// Button height of tab buttons in pixels. Is also used for width with pictorial buttons.
+constexpr int kTabPanelButtonHeight = 34;
+
 /**
  * This represents a Tab of the TabPanel. Note that this does no work
  * of drawing itself or handling anything really, it is only here to
  * offer the Panel interface for tabs so that the scripting interface
  * stays the same for all elements
  */
-struct Tab_Panel;
+struct TabPanel;
 struct Tab : public NamedPanel {
-	friend struct Tab_Panel;
+	friend struct TabPanel;
 
-	Tab
-		(Tab_Panel * parent,
-		 uint32_t,
-		 std::string const & name,
-		 PictureID,
-		 std::string const & gtooltip,
-		 Panel             * gpanel);
+	/** If title is not empty, this will be a textual tab.
+	 *  In that case, pic will need to be the rendered title
+	 *
+	 * Text conventions: Title Case for the 'title', Sentence case for the 'gtooltip'
+	 */
+	Tab(TabPanel* parent,
+	    size_t id,
+	    int32_t x,
+	    const std::string& name,
+	    const std::string& title,
+	    const Image* pic,
+	    const std::string& gtooltip,
+	    Panel* gpanel);
 
 	bool active();
 	void activate();
 
 private:
-	Tab_Panel * m_parent;
-	uint32_t    m_id;
+	// Leave handling the mouse move to the TabPanel.
+	bool handle_mousemove(uint8_t, int32_t, int32_t, int32_t, int32_t) override {
+		return false;
+	}
+	// Play click
+	bool handle_mousepress(uint8_t, int32_t, int32_t) override;
 
-	PictureID   picid;
+	TabPanel* parent;
+	uint32_t id;
+
+	const Image* pic;
+	std::shared_ptr<const UI::RenderedText> rendered_title;
 	std::string tooltip;
-	Panel     * panel;
+	Panel* panel;
 };
 
 /**
  * Provides a tab view; every tab is a panel that can contain any number of
- * sub-panels (such as buttons, other Tab_Panels, etc..) and an associated
+ * sub-panels (such as buttons, other TabPanels, etc..) and an associated
  * picture.
  * The picture is displayed as a button the user can click to bring the panel
  * to the top.
  *
- * The Panels you add() to the Tab_Panel must be children of the Tab_Panel.
+ * The Panels you add() to the TabPanel must be children of the TabPanel.
  *
  */
-struct Tab_Panel : public Panel {
-	friend class Tab;
+struct TabPanel : public Panel {
 
-	Tab_Panel(Panel * parent, int32_t x, int32_t y, PictureID background);
-	// For Fullscreen menus
-	Tab_Panel
-		(Panel * parent,
-		 int32_t x, int32_t y, int32_t w, int32_t h,
-		 PictureID background);
+	friend struct Tab;
 
-	uint32_t add
-		(std::string const & name,
-		 PictureID           picid,
-		 Panel             * panel,
-		 std::string const & tooltip = std::string());
+	TabPanel(Panel* parent, UI::TabPanelStyle style);
 
-	typedef std::vector<Tab *> TabList;
+	/** Add textual tab
+	 *
+	 * Text conventions: Title Case for the 'title', Sentence case for the 'tooltip'
+	 */
+	uint32_t add(const std::string& name,
+	             const std::string& title,
+	             Panel* panel,
+	             const std::string& tooltip = std::string());
 
-	const TabList & tabs();
+	/** Add pictorial tab
+	 * Text conventions: Sentence case for the 'tooltip'
+	 */
+	uint32_t add(const std::string& name,
+	             const Image* pic,
+	             Panel* panel,
+	             const std::string& tooltip = std::string());
+
+	using TabList = std::vector<Tab*>;
+
+	const TabList& tabs();
 	void activate(uint32_t idx);
-	void activate(std::string const &);
-	uint32_t active() {return m_active;}
+	void activate(const std::string&);
+	uint32_t active() {
+		return active_;
+	}
+	// Removes the last tab if the 'tabname' matches. Returns whether a tab was removed.
+	// We use the tabname as a safety precaution to prevent acidentally removing the wrong tab.
+	bool remove_last_tab(const std::string& tabname);
+
+	boost::signals2::signal<void()> sigclicked;
 
 protected:
-	virtual void layout();
-	virtual void update_desired_size();
+	void layout() override;
+	void update_desired_size() override;
+
+	UI::TabPanelStyle style_;
 
 private:
+	// Common adding function for textual and pictorial tabs
+	uint32_t add_tab(const std::string& name,
+	                 const std::string& title,
+	                 const Image* pic,
+	                 const std::string& tooltip,
+	                 Panel* contents);
+
 	// Drawing and event handlers
-	void draw(RenderTarget &);
+	void draw(RenderTarget&) override;
 
-	bool handle_mousepress  (Uint8 btn, int32_t x, int32_t y);
-	bool handle_mouserelease(Uint8 btn, int32_t x, int32_t y);
-	bool handle_mousemove
-		(Uint8 state, int32_t x, int32_t y, int32_t xdiff, int32_t ydiff);
-	void handle_mousein(bool inside);
+	bool handle_mousepress(uint8_t btn, int32_t x, int32_t y) override;
+	bool
+	handle_mousemove(uint8_t state, int32_t x, int32_t y, int32_t xdiff, int32_t ydiff) override;
+	void handle_mousein(bool inside) override;
 
+	size_t find_tab(int32_t x, int32_t y) const;
 
-	TabList          m_tabs;
-	uint32_t         m_active;         ///< index of the currently active tab
-	int32_t          m_highlight;      ///< index of the highlighted button
+	TabList tabs_;
+	size_t active_;     ///< index of the currently active tab
+	size_t highlight_;  ///< index of the highlighted button
 
-	PictureID        m_pic_background; ///< picture used to draw background
+	const UI::PanelStyleInfo* background_style_;  // Background color and texture. Not owned.
 };
-};
+}  // namespace UI
 
-#endif
+#endif  // end of include guard: WL_UI_BASIC_TABPANEL_H

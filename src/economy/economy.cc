@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,92 +13,100 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "economy.h"
+#include "economy/economy.h"
+
+#include <memory>
+#include <unordered_set>
 
 #include <boost/bind.hpp>
 
-// Package includes
-#include "flag.h"
-#include "route.h"
-#include "cmd_call_economy_balance.h"
-#include "router.h"
-
+#include "base/macros.h"
+#include "base/wexception.h"
+#include "economy/cmd_call_economy_balance.h"
+#include "economy/flag.h"
+#include "economy/request.h"
+#include "economy/route.h"
+#include "economy/routeastar.h"
+#include "economy/router.h"
+#include "economy/warehousesupply.h"
 #include "logic/game.h"
+#include "logic/map_objects/tribes/soldier.h"
+#include "logic/map_objects/tribes/tribe_descr.h"
+#include "logic/map_objects/tribes/warehouse.h"
 #include "logic/player.h"
-#include "request.h"
-#include "logic/tribe.h"
-#include "upcast.h"
-#include "logic/warehouse.h"
-#include "warehousesupply.h"
-#include "wexception.h"
 
 namespace Widelands {
 
-Economy::Economy(Player & player) :
-	m_owner(player),
-	m_rebuilding     (false),
-	m_request_timerid(0)
-{
-	Tribe_Descr const & tribe = player.tribe();
-	Ware_Index const nr_wares   = tribe.get_nrwares();
-	Ware_Index const nr_workers = tribe.get_nrworkers();
-	m_wares.set_nrwares(nr_wares);
-	m_workers.set_nrwares(nr_workers);
+Serial Economy::last_economy_serial_ = 0;
 
-	player.add_economy(*this);
-
-	m_ware_target_quantities   = new Target_Quantity[nr_wares  .value()];
-	for (Ware_Index i = Ware_Index::First(); i < nr_wares; ++i) {
-		Target_Quantity tq;
-		tq.permanent =
-			tribe.get_ware_descr(i)->default_target_quantity();
-		tq.last_modified = 0;
-		m_ware_target_quantities[i.value()] = tq;
-	}
-	m_worker_target_quantities = new Target_Quantity[nr_workers.value()];
-	for (Ware_Index i = Ware_Index::First(); i < nr_workers; ++i) {
-		Target_Quantity tq;
-		tq.permanent =
-			tribe.get_worker_descr(i)->default_target_quantity();
-		tq.last_modified = 0;
-		m_worker_target_quantities[i.value()] = tq;
-	}
-
-	m_router =
-		 new Router(boost::bind(&Economy::_reset_all_pathfinding_cycles, this));
+void Economy::initialize_serial() {
+	log("Initializing economy serial\n");
+	last_economy_serial_ = 0;
 }
 
-Economy::~Economy()
-{
-	assert(!m_rebuilding);
+Economy::Economy(Player& player, WareWorker wwtype)
+   : Economy(player, last_economy_serial_++, wwtype) {
+}
 
-	m_owner.remove_economy(*this);
+Economy::Economy(Player& player, Serial init_serial, WareWorker wwtype)
+   : serial_(init_serial),
+     owner_(player),
+     type_(wwtype),
+     request_timerid_(0),
+     options_window_(nullptr) {
+	last_economy_serial_ = std::max(last_economy_serial_, serial_ + 1);
+	const TribeDescr& tribe = player.tribe();
+	DescriptionIndex const nr_wares_or_workers =
+	   wwtype == wwWARE ? player.egbase().tribes().nrwares() : player.egbase().tribes().nrworkers();
+	wares_or_workers_.set_nrwares(nr_wares_or_workers);
 
-	if (m_requests.size())
+	target_quantities_ = new TargetQuantity[nr_wares_or_workers];
+	for (DescriptionIndex i = 0; i < nr_wares_or_workers; ++i) {
+		TargetQuantity tq;
+		switch (type_) {
+		case wwWARE:
+			if (tribe.has_ware(i)) {
+				tq.permanent = tribe.get_ware_descr(i)->default_target_quantity(tribe.name());
+			} else {
+				tq.permanent = 0;
+			}
+			break;
+		case wwWORKER:
+			tq.permanent = tribe.get_worker_descr(i)->default_target_quantity();
+			break;
+		}
+		tq.last_modified = 0;
+		target_quantities_[i] = tq;
+	}
+
+	router_.reset(new Router(boost::bind(&Economy::reset_all_pathfinding_cycles, this)));
+}
+
+Economy::~Economy() {
+	Notifications::publish(NoteEconomy{serial_, serial_, NoteEconomy::Action::kDeleted});
+
+	if (requests_.size())
 		log("Warning: Economy still has requests left on destruction\n");
-	if (m_flags.size())
+	if (flags_.size())
 		log("Warning: Economy still has flags left on destruction\n");
-	if (m_warehouses.size())
+	if (warehouses_.size())
 		log("Warning: Economy still has warehouses left on destruction\n");
 
-	delete[] m_ware_target_quantities;
-	delete[] m_worker_target_quantities;
-
-	delete m_router;
+	delete[] target_quantities_;
 }
 
-
 /**
- * \return an arbitrary flag in this economy, or 0 if no flag exists
+ * \return an arbitrary flag in this economy.
  */
-Flag & Economy::get_arbitrary_flag()
-{
-	assert(m_flags.size());
-	return *m_flags[0];
+Flag* Economy::get_arbitrary_flag() {
+	if (flags_.empty())
+		return nullptr;
+
+	return flags_[0];
 }
 
 /**
@@ -106,86 +114,107 @@ Flag & Economy::get_arbitrary_flag()
  * merged.
  * Since we could merge into both directions, we preserve the economy that is
  * currently bigger (should be more efficient).
-*/
-void Economy::check_merge(Flag & f1, Flag & f2)
-{
-	Economy * e1 = f1.get_economy();
-	Economy * e2 = f2.get_economy();
+ */
+void Economy::check_merge(Flag& f1, Flag& f2, WareWorker type) {
+	Economy* e1 = f1.get_economy(type);
+	Economy* e2 = f2.get_economy(type);
 	if (e1 != e2) {
 		if (e1->get_nrflags() < e2->get_nrflags())
 			std::swap(e1, e2);
-		e1->_merge(*e2);
+		e1->merge(*e2);
 	}
 }
 
-/// If the two flags can no longer reach each other (pathfinding!), the economy
-/// gets split.
-///
-/// Should we create the new economy starting at f1 or f2? Ideally, we'd split
-/// off in a way that the new economy will be relatively small.
-///
-/// Unfortunately, there's no easy way to tell in advance which of the two
-/// resulting economies will be smaller (the problem is even NP-complete), so
-/// we use a heuristic.
-/// NOTE There is a way; parallel counting. If for example one has size 100 and
-/// NOTE the other has size 1, we start counting (to 1) in the first. Then we
-/// NOTE switch to the second and count (to 1) there. Then we switch to the
-/// NOTE first and count (to 2) there. Then we switch to the second and have
-/// NOTE nothing more to count. We are done and know that the second is not
-/// NOTE larger than the first.
-/// NOTE
-/// NOTE We have not done more than n * (s + 1) counting operations, where n is
-/// NOTE the number of parallel entities (2 in this example) and s is the size
-/// NOTE of the smallest entity (1 in this example). So instead of risking to
-/// NOTE make a bad guess and change 100 entities, we count 4 and change 1.
-/// NOTE                                                                --sigra
-///
-/// Using f2 is just a guess, but if anything f2 is probably best: it will be
-/// the end point of a road. Since roads are typically built from the center of
-/// a country outwards, and since splits are more likely to happen outwards,
-/// the economy at the end point is probably smaller in average. It's all just
-/// guesswork though ;)
-/// NOTE Many roads are built when a new building has just been placed. For
-/// NOTE those cases, the guess is bad because the user typically builds from
-/// NOTE the new building's flag to some existing flag (at the headquarter or
-/// NOTE somewhere in his larger road network). This is also what the user
-/// NOTE interface makes the player do when it enters roadbuilding mode after
-/// NOTE placing a flag that is not connected with roads.               --sigra
-void Economy::check_split(Flag & f1, Flag & f2)
-{
+/**
+ * Notify the economy that there may no longer be a connection between
+ * the given flags in the road and seafaring network.
+ */
+void Economy::check_split(Flag& f1, Flag& f2, WareWorker type) {
 	assert(&f1 != &f2);
-	assert(f1.get_economy() == f2.get_economy());
+	assert(f1.get_economy(type) == f2.get_economy(type));
 
-	Economy * e = f1.get_economy();
+	Economy* e = f1.get_economy(type);
 	// No economy in the editor.
-	if (not e)
+	if (!e)
 		return;
 
-	if (not e->find_route(f1, f2, 0, false))
-		e->_split(f2);
+	e->split_checks_.push_back(std::make_pair(OPtr<Flag>(&f1), OPtr<Flag>(&f2)));
+	e->rebalance_supply();  // the real split-checking is done during rebalance
 }
 
+void Economy::check_splits() {
+	EditorGameBase& egbase = owner().egbase();
+	while (split_checks_.size()) {
+		Flag* f1 = split_checks_.back().first.get(egbase);
+		Flag* f2 = split_checks_.back().second.get(egbase);
+		split_checks_.pop_back();
+
+		if (!f1 || !f2) {
+			if (!f1 && !f2)
+				continue;
+			if (!f1)
+				f1 = f2;
+			if (f1->get_economy(type_) != this)
+				continue;
+
+			// Handle the case when two or more roads are removed simultaneously
+			RouteAStar<AStarZeroEstimator> astar(*router_, type_, AStarZeroEstimator());
+			astar.push(*f1);
+			std::set<OPtr<Flag>> reachable;
+			while (RoutingNode* current = astar.step()) {
+				reachable.insert(&current->base_flag());
+			}
+			if (reachable.size() != flags_.size()) {
+				split(reachable);
+			}
+			continue;
+		}
+
+		// If one (or both) of the flags have already been split off, we do not need to re-check
+		if (f1->get_economy(type_) != this || f2->get_economy(type_) != this)
+			continue;
+
+		// Start an A-star searches from f1 with a heuristic bias towards f2,
+		// because we do not need to do anything if f1 is still connected to f2.
+		// If f2 is not reached by the search, split off all the nodes that have been
+		// reached from f1. These nodes induce a connected subgraph.
+		// This means that the newly created economy, which contains all the
+		// flags that have been split, is already connected.
+		RouteAStar<AStarEstimator> astar(*router_, type_, AStarEstimator(*egbase.mutable_map(), *f2));
+		astar.push(*f1);
+		std::set<OPtr<Flag>> reachable;
+
+		for (;;) {
+			RoutingNode* current = astar.step();
+			if (!current) {
+				split(reachable);
+				break;
+			} else if (current == f2) {
+				break;
+			}
+			reachable.insert(&current->base_flag());
+		}
+	}
+}
 
 /**
- * Calcaluate a route between two flags.
+ * Calculate a route between two flags.
  *
  * This functionality has been moved to Router(). This is currently
  * merely a delegator.
-*/
-bool Economy::find_route
-	(Flag & start, Flag & end,
-	 Route * const route,
-	 bool    const wait,
-	 int32_t const cost_cutoff)
-{
-	assert(start.get_economy() == this);
-	assert(end  .get_economy() == this);
-
-	Map & map = owner().egbase().map();
-
-	return
-		m_router->find_route(start, end, route, wait, cost_cutoff, map);
+ */
+bool Economy::find_route(Flag& start, Flag& end, Route* const route, int32_t const cost_cutoff) {
+	assert(start.get_economy(type_) == this);
+	assert(end.get_economy(type_) == this);
+	return router_->find_route(
+	   start, end, route, type_, cost_cutoff, *owner().egbase().mutable_map());
 }
+
+struct ZeroEstimator {
+	int32_t operator()(RoutingNode& /* node */) const {
+		return 0;
+	}
+};
 
 /**
  * Find the warehouse closest to the given starting flag.
@@ -194,140 +223,83 @@ bool Economy::find_route
  * a route is also computed.
  *
  * \param start starting flag
- * \param is_ware whether to path-find as if the path were for a ware
  * \param route if non-null, fill in a route to the warehouse
  * \param cost_cutoff if positive, find paths of at most
  * that length (in milliseconds)
  */
-Warehouse * Economy::find_closest_warehouse
-	(Flag & start, bool is_ware, Route * route, uint32_t cost_cutoff,
-	 const Economy::WarehouseAcceptFn & acceptfn)
-{
+Warehouse* Economy::find_closest_warehouse(Flag& start,
+                                           Route* route,
+                                           uint32_t cost_cutoff,
+                                           const Economy::WarehouseAcceptFn& acceptfn) {
 	if (!warehouses().size())
-		return 0;
+		return nullptr;
 
-	// Perform a simple Dijkstra
-	// FIXME Find a good way to share code with Router::find_route
-	uint32_t mpf_cycle = m_router->assign_cycle();
-	RoutingNode::Queue open;
+	// A-star with zero estimator = Dijkstra
+	RouteAStar<ZeroEstimator> astar(*router_, type_);
+	astar.push(start);
 
-	start.mpf_cycle = mpf_cycle;
-	start.mpf_realcost = 0;
-	start.mpf_backlink = 0;
-	start.mpf_estimate = 0;
-	open.push(&start);
-
-	while (!open.empty()) {
-		RoutingNode * current = open.top();
-		open.pop(current);
-
-		if
-			(cost_cutoff && current->mpf_realcost >
-			 static_cast<int32_t>(cost_cutoff))
-			return 0;
-
-		Flag & flag = current->base_flag();
-		if (upcast(Warehouse, warehouse, flag.get_building())) {
-			if (!acceptfn || acceptfn(*warehouse)) {
-				if (route) {
-					route->init(current->mpf_realcost);
-
-					while (current) {
-						route->insert_as_first(current);
-						current = current->mpf_backlink;
-					}
-				}
-
-				return warehouse;
-			}
+	while (RoutingNode* current = astar.step()) {
+		if (cost_cutoff &&
+		    (type_ == wwWARE ? current->mpf_realcost_ware : current->mpf_realcost_worker) >
+		       static_cast<int32_t>(cost_cutoff)) {
+			return nullptr;
 		}
 
-		// Loop through all neighbouring nodes
-		RoutingNodeNeighbours neighbours;
-
-		current->get_neighbours(neighbours);
-
-		for (uint32_t i = 0; i < neighbours.size(); ++i) {
-			RoutingNode & neighbour = *neighbours[i].get_neighbour();
-			int32_t cost;
-
-			// We have already found the best path to this neighbour,
-			// no need to visit it again.
-			if
-				(neighbour.mpf_cycle == mpf_cycle &&
-				 !neighbour.cookie().is_active())
-				continue;
-
-			cost = current->mpf_realcost + neighbours[i].get_cost();
-			if (is_ware) {
-				cost +=
-					(current->get_waitcost() + neighbour.get_waitcost())
-					* neighbours[i].get_cost() / 2;
-			}
-
-			if (neighbour.mpf_cycle != mpf_cycle) {
-				// add to open list
-				neighbour.mpf_cycle = mpf_cycle;
-				neighbour.mpf_realcost = cost;
-				neighbour.mpf_estimate = 0;
-				neighbour.mpf_backlink = current;
-				open.push(&neighbour);
-			} else if (cost < neighbour.mpf_realcost) {
-				// found a better path to a field that's already Open
-				neighbour.mpf_realcost = cost;
-				neighbour.mpf_backlink = current;
-				open.decrease_key(&neighbour);
+		Flag& flag = current->base_flag();
+		if (upcast(Warehouse, warehouse, flag.get_building())) {
+			if (!acceptfn || acceptfn(*warehouse)) {
+				if (route)
+					astar.routeto(flag, *route);
+				return warehouse;
 			}
 		}
 	}
 
-	return 0;
+	return nullptr;
 }
-
 
 /**
  * Add a flag to the flag array.
  * Only call from Flag init and split/merger code!
-*/
-void Economy::add_flag(Flag & flag)
-{
-	assert(flag.get_economy() == 0);
+ */
+void Economy::add_flag(Flag& flag) {
+	assert(flag.get_economy(type_) == nullptr);
 
-	m_flags.push_back(&flag);
-	flag.set_economy(this);
+	flags_.push_back(&flag);
+	flag.set_economy(this, type_);
 
-	flag.reset_path_finding_cycle();
+	flag.reset_path_finding_cycle(type_);
 }
 
 /**
  * Remove a flag from the flag array.
  * Only call from Flag cleanup and split/merger code!
-*/
-void Economy::remove_flag(Flag & flag)
-{
-	assert(flag.get_economy() == this);
+ */
+void Economy::remove_flag(Flag& flag) {
+	assert(flag.get_economy(type_) == this);
 
-	_remove_flag(flag);
+	do_remove_flag(flag);
 
 	// automatically delete the economy when it becomes empty.
-	if (m_flags.empty())
-		delete this;
+	if (flags_.empty()) {
+		owner_.remove_economy(serial_);
+	}
 }
 
 /**
  * Remove the flag, but don't delete the economy automatically.
  * This is called from the merge code.
-*/
-void Economy::_remove_flag(Flag & flag)
-{
-	flag.set_economy(0);
+ */
+void Economy::do_remove_flag(Flag& flag) {
+	flag.set_economy(nullptr, type_);
 
 	// fast remove
-	container_iterate(Flags, m_flags, i)
-		if (*i.current == &flag) {
-			*i.current = *(i.get_end() - 1);
-			return m_flags.pop_back();
+	for (Flags::iterator flag_iter = flags_.begin(); flag_iter != flags_.end(); ++flag_iter) {
+		if (*flag_iter == &flag) {
+			*flag_iter = *(flags_.end() - 1);
+			return flags_.pop_back();
 		}
+	}
 	throw wexception("trying to remove nonexistent flag");
 }
 
@@ -335,62 +307,53 @@ void Economy::_remove_flag(Flag & flag)
  * Callback for the incredibly rare case that the \ref Router pathfinding
  * cycle wraps around.
  */
-void Economy::_reset_all_pathfinding_cycles()
-{
-	container_iterate(Flags, m_flags, i)
-		(*i.current)->reset_path_finding_cycle();
+void Economy::reset_all_pathfinding_cycles() {
+	for (Flag* flag : flags_) {
+		flag->reset_path_finding_cycle(type_);
+	}
 }
 
 /**
- * Set the target quantities for the given Ware_Index to the
+ * Set the target quantities for the given DescriptionIndex to the
  * numbers given in permanent. Also update the last
  * modification time.
  *
  * This is called from Cmd_ResetTargetQuantity and Cmd_SetTargetQuantity
  */
-void Economy::set_ware_target_quantity
-	(Ware_Index const ware_type,
-	 uint32_t   const permanent,
-	 Time       const mod_time)
-{
-	Target_Quantity & tq = m_ware_target_quantities[ware_type.value()];
+void Economy::set_target_quantity(DescriptionIndex const ware_or_worker_type,
+                                  Quantity const permanent,
+                                  Time const mod_time) {
+#ifndef NDEBUG
+	if (type_ == wwWARE) {
+		assert(owner().egbase().tribes().ware_exists(ware_or_worker_type));
+	} else {
+		assert(owner().egbase().tribes().worker_exists(ware_or_worker_type));
+	}
+#endif
+	TargetQuantity& tq = target_quantities_[ware_or_worker_type];
 	tq.permanent = permanent;
 	tq.last_modified = mod_time;
 }
-
-
-void Economy::set_worker_target_quantity
-	(Ware_Index const ware_type,
-	 uint32_t   const permanent,
-	 Time       const mod_time)
-{
-	Target_Quantity & tq = m_worker_target_quantities[ware_type.value()];
-	tq.permanent = permanent;
-	tq.last_modified = mod_time;
-}
-
 
 /**
  * Call this whenever some entity created a ware, e.g. when a lumberjack
  * has felled a tree.
  * This is also called when a ware is added to the economy through trade or
  * a merger.
-*/
-void Economy::add_wares(Ware_Index const id, uint32_t const count)
-{
-	//log("%p: add(%i, %i)\n", this, id, count);
+ * Also notifies the corresponding other-type economy, if desired,
+ * so it may check e.g. whether a worker for whom a tool was missing can now be created.
+ */
+void Economy::add_wares_or_workers(DescriptionIndex const id,
+                                   Quantity const count,
+                                   Economy* other_economy) {
+	wares_or_workers_.add(id, count);
+	start_request_timer();
+	if (other_economy) {
+		assert(other_economy->type() != type_);
+		other_economy->start_request_timer();
+	}
 
-	m_wares.add(id, count);
-
-	// TODO: add to global player inventory?
-}
-void Economy::add_workers(Ware_Index const id, uint32_t const count)
-{
-	//log("%p: add(%i, %i)\n", this, id, count);
-
-	m_workers.add(id, count);
-
-	// TODO: add to global player inventory?
+	// TODO(unknown): add to global player inventory?
 }
 
 /**
@@ -398,341 +361,288 @@ void Economy::add_workers(Ware_Index const id, uint32_t const count)
  * eaten or a warehouse has been destroyed.
  * This is also called when a ware is removed from the economy through trade or
  * a split of the Economy.
-*/
-void Economy::remove_wares(Ware_Index const id, uint32_t const count)
-{
-	assert(id < m_owner.tribe().get_nrwares());
-	//log("%p: remove(%i, %i) from %i\n", this, id, count, m_wares.stock(id));
-
-	m_wares.remove(id, count);
-
-	// TODO: remove from global player inventory?
-}
-
-/**
- * Call this whenever a worker is destroyed.
- * This is also called when a worker is removed from the economy through
- * a split of the Economy.
  */
-void Economy::remove_workers(Ware_Index const id, uint32_t const count)
-{
-	//log("%p: remove(%i, %i) from %i\n", this, id, count, m_workers.stock(id));
+void Economy::remove_wares_or_workers(DescriptionIndex const id, Quantity const count) {
+#ifndef NDEBUG
+	if (type_ == wwWARE) {
+		assert(owner().egbase().tribes().ware_exists(id));
+	} else {
+		assert(owner().egbase().tribes().worker_exists(id));
+	}
+#endif
+	wares_or_workers_.remove(id, count);
 
-	m_workers.remove(id, count);
-
-	// TODO: remove from global player inventory?
+	// TODO(unknown): remove from global player inventory?
 }
 
 /**
  * Add the warehouse to our list of warehouses.
  * This also adds the wares in the warehouse to the economy. However, if wares
  * are added to the warehouse in the future, add_wares() must be called.
-*/
-void Economy::add_warehouse(Warehouse & wh)
-{
-	m_warehouses.push_back(&wh);
+ */
+void Economy::add_warehouse(Warehouse& wh) {
+	warehouses_.push_back(&wh);
 }
 
 /**
  * Remove the warehouse and its wares from the economy.
-*/
-void Economy::remove_warehouse(Warehouse & wh)
-{
-	for (size_t i = 0; i < m_warehouses.size(); ++i)
-		if (m_warehouses[i] == &wh) {
-			m_warehouses[i] = *m_warehouses.rbegin();
-			m_warehouses.pop_back();
+ */
+void Economy::remove_warehouse(Warehouse& wh) {
+	for (size_t i = 0; i < warehouses_.size(); ++i)
+		if (warehouses_[i] == &wh) {
+			warehouses_[i] = *warehouses_.rbegin();
+			warehouses_.pop_back();
 			return;
 		}
-
 
 	//  This assert was modified, since on loading, warehouses might try to
 	//  remove themselves from their own economy, though they weren't added
 	//  (since they weren't initialized)
-	assert(m_warehouses.empty());
+	assert(warehouses_.empty());
 }
 
 /**
  * Consider the request, try to fulfill it immediately or queue it for later.
  * Important: This must only be called by the \ref Request class.
-*/
-void Economy::add_request(Request & req)
-{
+ */
+void Economy::add_request(Request& req) {
 	assert(req.is_open());
-	assert(!_has_request(req));
+	assert(!has_request(req));
 
 	assert(&owner());
 
-	m_requests.push_back(&req);
+	requests_.push_back(&req);
 
 	// Try to fulfill the request
-	_start_request_timer();
+	start_request_timer();
 }
 
 /**
  * \return true if the given Request is registered with the \ref Economy, false
  * otherwise
-*/
-bool Economy::_has_request(Request & req)
-{
-	return
-		std::find(m_requests.begin(), m_requests.end(), &req)
-		!=
-		m_requests.end();
+ */
+bool Economy::has_request(Request& req) {
+	return std::find(requests_.begin(), requests_.end(), &req) != requests_.end();
 }
 
 /**
  * Remove the request from this economy.
  * Important: This must only be called by the \ref Request class.
-*/
-void Economy::remove_request(Request & req)
-{
-	RequestList::iterator const it =
-		std::find(m_requests.begin(), m_requests.end(), &req);
+ */
+void Economy::remove_request(Request& req) {
+	RequestList::iterator const it = std::find(requests_.begin(), requests_.end(), &req);
 
-	if (it == m_requests.end()) {
+	if (it == requests_.end()) {
+		FORMAT_WARNINGS_OFF
 		log("WARNING: remove_request(%p) not in list\n", &req);
+		FORMAT_WARNINGS_ON
 		return;
 	}
 
-	*it = *m_requests.rbegin();
+	*it = *requests_.rbegin();
 
-	m_requests.pop_back();
+	requests_.pop_back();
 }
 
 /**
  * Add a supply to our list of supplies.
-*/
-void Economy::add_supply(Supply & supply)
-{
-	m_supplies.add_supply(supply);
-	_start_request_timer();
+ */
+void Economy::add_supply(Supply& supply) {
+	supplies_.add_supply(supply);
+	start_request_timer();
 }
-
 
 /**
  * Remove a supply from our list of supplies.
-*/
-void Economy::remove_supply(Supply & supply)
-{
-	m_supplies.remove_supply(supply);
+ */
+void Economy::remove_supply(Supply& supply) {
+	supplies_.remove_supply(supply);
 }
 
+bool Economy::needs_ware_or_worker(DescriptionIndex const ware_or_worker_type) const {
+	Quantity const t = target_quantity(ware_or_worker_type).permanent;
 
-bool Economy::needs_ware(Ware_Index const ware_type) const {
-	size_t const nr_supplies = m_supplies.get_nrsupplies();
-	uint32_t const t = ware_target_quantity(ware_type).permanent;
-	uint32_t quantity = 0;
-	for (size_t i = 0; i < nr_supplies; ++i)
-		if (upcast(WarehouseSupply const, warehouse_supply, &m_supplies[i])) {
-			quantity += warehouse_supply->stock_wares(ware_type);
-			if (t <= quantity)
+	// we have a target quantity set
+	if (t > 0) {
+		Quantity quantity = 0;
+		for (const Warehouse* wh : warehouses_) {
+			quantity += type_ == wwWARE ? wh->get_wares().stock(ware_or_worker_type) :
+			                              wh->get_workers().stock(ware_or_worker_type);
+			if (t <= quantity) {
 				return false;
+			}
 		}
-	return true;
-}
+		return true;
 
+		// we have target quantity set to 0, we need to check if there is an open request
+	} else {
+		for (const Request* temp_req : requests_) {
+			const Request& req = *temp_req;
 
-bool Economy::needs_worker(Ware_Index const worker_type) const {
-	size_t const nr_supplies = m_supplies.get_nrsupplies();
-	uint32_t const t = worker_target_quantity(worker_type).permanent;
-	uint32_t quantity = 0;
-	for (size_t i = 0; i < nr_supplies; ++i)
-		if (upcast(WarehouseSupply const, warehouse_supply, &m_supplies[i])) {
-			quantity += warehouse_supply->stock_workers(worker_type);
-			if (t <= quantity)
-				return false;
+			if (req.get_type() == type_ && req.get_index() == ware_or_worker_type) {
+				return true;
+			}
 		}
-	return true;
+		return false;
+	}
 }
-
 
 /**
  * Add e's flags to this economy.
  *
  * Also transfer all wares and wares request. Try to resolve the new ware
  * requests if possible.
-*/
-void Economy::_merge(Economy & e)
-{
-	for (Ware_Index::value_t i = m_owner.tribe().get_nrwares().value(); i;) {
-		--i;
-		Target_Quantity other_tq = e.m_ware_target_quantities[i];
-		Target_Quantity & this_tq = m_ware_target_quantities[i];
-		if (this_tq.last_modified < other_tq.last_modified)
+ */
+void Economy::merge(Economy& e) {
+	assert(e.type() == type_);
+	for (const DescriptionIndex& w_index :
+	     (type_ == wwWARE ? owner_.tribe().wares() : owner_.tribe().workers())) {
+		TargetQuantity other_tq = e.target_quantities_[w_index];
+		TargetQuantity& this_tq = target_quantities_[w_index];
+		if (this_tq.last_modified < other_tq.last_modified) {
 			this_tq = other_tq;
-	}
-	for (Ware_Index::value_t i = m_owner.tribe().get_nrworkers().value(); i;) {
-		--i;
-		Target_Quantity other_tq = e.m_worker_target_quantities[i];
-		Target_Quantity & this_tq = m_worker_target_quantities[i];
-		if (this_tq.last_modified < other_tq.last_modified)
-			this_tq = other_tq;
-	}
-
-	//  If the options window for e is open, but not the one for *this, the user
-	//  should still have an options window after the merge. Create an options
-	//  window for *this where the options window for e is, to give the user
-	//  some continuity.
-	if
-		(e.m_optionswindow_registry.window and
-		 not m_optionswindow_registry.window)
-	{
-		m_optionswindow_registry.x = e.m_optionswindow_registry.x;
-		m_optionswindow_registry.x = e.m_optionswindow_registry.x;
-		show_options_window();
-	}
-
-
-	m_rebuilding = true;
-
-	// Be careful around here. The last e->remove_flag() will cause the other
-	// economy to delete itself.
-	for (std::vector<Flag *>::size_type i = e.get_nrflags() + 1; --i;) {
-		assert(i == e.get_nrflags());
-
-		Flag & flag = *e.m_flags[0];
-
-		e._remove_flag(flag);
-		add_flag(flag);
-	}
-
-	// Fix up Supply/Request after rebuilding
-	m_rebuilding = false;
-
-	// implicitly delete the economy
-	delete &e;
-}
-
-/// Flag initial_flag and all its direct and indirect neighbours are put into a
-/// new economy.
-void Economy::_split(Flag & initial_flag)
-{
-	Economy & e = *new Economy(m_owner);
-
-	for (Ware_Index::value_t i = m_owner.tribe().get_nrwares  ().value(); i;) {
-		--i;
-		e.m_ware_target_quantities[i] = m_ware_target_quantities[i];
-	}
-	for (Ware_Index::value_t i = m_owner.tribe().get_nrworkers().value(); i;) {
-		--i;
-		e.m_worker_target_quantities[i] = m_worker_target_quantities[i];
-	}
-
-	m_rebuilding = true;
-	e.m_rebuilding = true;
-
-	// Use a vector instead of a set to ensure parallel simulation
-	std::vector<Flag *> open;
-
-	open.push_back(&initial_flag);
-	while (open.size()) {
-		Flag & flag = **open.rbegin();
-		open.pop_back();
-
-		if (flag.get_economy() != this)
-			continue;
-
-		// move this flag to the new economy
-		remove_flag(flag);
-		e.add_flag(flag);
-
-		//  check all neighbours; if they aren't in the new economy yet, add
-		//  them to the list (note: roads and buildings are reassigned via
-		//  Flag::set_economy)
-		RoutingNodeNeighbours neighbours;
-		flag.get_neighbours(neighbours);
-
-		for (uint32_t i = 0; i < neighbours.size(); ++i) {
-			/// \todo the next line shouldn't need any casts at all
-			Flag & n = *dynamic_cast<Flag *>(neighbours[i].get_neighbour());
-
-			if (n.get_economy() == this)
-				open.push_back(&n);
 		}
 	}
 
-	// Fix Supply/Request after rebuilding
-	m_rebuilding = false;
-	e.m_rebuilding = false;
+	//  If the options window for e is open, but not the one for this, the user
+	//  should still have an options window after the merge.
+	if (e.get_options_window() && !get_options_window()) {
+		Notifications::publish(NoteEconomy{e.serial(), serial_, NoteEconomy::Action::kMerged});
+	}
+
+	for (std::vector<Flag*>::size_type i = e.get_nrflags() + 1; --i;) {
+		assert(i == e.get_nrflags());
+
+		Flag& flag = *e.flags_[0];
+
+		e.do_remove_flag(flag);  // do not delete other economy yet!
+		add_flag(flag);
+	}
+
+	// Remember that the other economy may not have been connected before the merge
+	split_checks_.insert(split_checks_.end(), e.split_checks_.begin(), e.split_checks_.end());
+	owner_.remove_economy(e.serial());
+}
+
+/**
+ * Split the given set of flags off into a new economy.
+ */
+void Economy::split(const std::set<OPtr<Flag>>& flags) {
+	assert(!flags.empty());
+
+	Economy* e = owner_.create_economy(type_);
+
+	for (const DescriptionIndex& w_index :
+	     (type_ == wwWARE ? owner_.tribe().wares() : owner_.tribe().workers())) {
+		e->target_quantities_[w_index] = target_quantities_[w_index];
+	}
+
+	for (const OPtr<Flag>& temp_flag : flags) {
+		Flag& flag = *temp_flag.get(owner().egbase());
+		assert(flags_.size() > 1);  // We will not be deleted in remove_flag, right?
+		remove_flag(flag);
+		e->add_flag(flag);
+	}
 
 	// As long as rebalance commands are tied to specific flags, we
 	// need this, because the flag that rebalance commands for us were
 	// tied to might have been moved into the other economy
-	_start_request_timer();
+	start_request_timer();
 }
 
 /**
  * Make sure the request timer is running.
+ * We can skip this for flagless economies (expedition ships don't need economy balancing...).
  */
-void Economy::_start_request_timer(int32_t const delta)
-{
-	if (upcast(Game, game, &m_owner.egbase()))
-		game->cmdqueue().enqueue
-			(new Cmd_Call_Economy_Balance
-			 	(game->get_gametime() + delta, this, m_request_timerid));
+void Economy::start_request_timer(int32_t const delta) {
+	if (!flags_.empty()) {
+		if (upcast(Game, game, &owner_.egbase())) {
+			game->cmdqueue().enqueue(
+			   new CmdCallEconomyBalance(game->get_gametime() + delta, this, request_timerid_));
+		}
+	}
 }
-
 
 /**
  * Find the supply that is best suited to fulfill the given request.
  * \return 0 if no supply is found, the best supply otherwise
-*/
-Supply * Economy::_find_best_supply
-	(Game & game, Request const & req, int32_t & cost)
-{
+ */
+Supply* Economy::find_best_supply(Game& game, const Request& req, int32_t& cost) {
 	assert(req.is_open());
 
 	Route buf_route0, buf_route1;
-	Supply * best_supply = 0;
-	Route  * best_route  = 0;
-	int32_t  best_cost   = -1;
-	Flag & target_flag = req.target_flag();
+	Supply* best_supply = nullptr;
+	Route* best_route = nullptr;
+	int32_t best_cost = -1;
+	Flag& target_flag = req.target_flag();
 
-	for (size_t i = 0; i < m_supplies.get_nrsupplies(); ++i) {
-		Supply & supp = m_supplies[i];
+	available_supplies_.clear();
 
-		// Check requirements
+	for (size_t i = 0; i < supplies_.get_nrsupplies(); ++i) {
+		Supply& supp = supplies_[i];
+
+		// Just skip if supply does not provide required ware
 		if (!supp.nr_supplies(game, req))
 			continue;
 
-		Route * const route =
-			best_route != &buf_route0 ? &buf_route0 : &buf_route1;
-		// will be cleared by find_route()
+		const SupplyProviders provider = supp.provider_type(&game);
 
-		if
-			(!
-			 find_route
-			 	(supp.get_position(game)->base_flag(),
-			 	 target_flag,
-			 	 route,
-			 	 false,
-			 	 best_cost))
-		{
-			if (!best_route)
-				throw wexception
-					("Economy::find_best_supply: COULD NOT FIND A ROUTE!");
+		// We generally ignore disponible wares on ship as it is not possible to reliably
+		// calculate route (transportation time)
+		if (provider == SupplyProviders::kShip) {
 			continue;
 		}
 
+		const Widelands::Coords provider_position =
+		   supp.get_position(game)->base_flag().get_position();
+
+		const uint32_t dist = game.map().calc_distance(target_flag.get_position(), provider_position);
+
+		UniqueDistance ud = {dist, supp.get_position(game)->serial(), provider};
+
+		// std::map quarantees uniqueness, practically it means that if more wares are on the same
+		// flag, only
+		// first one will be inserted into available_supplies
+		available_supplies_.insert(std::make_pair(ud, &supplies_[i]));
+	}
+
+	// Now available supplies have been sorted by distance to requestor
+	for (auto& supplypair : available_supplies_) {
+		Supply& supp = *supplypair.second;
+
+		Route* const route = best_route != &buf_route0 ? &buf_route0 : &buf_route1;
+		// will be cleared by find_route()
+
+		if (!find_route(supp.get_position(game)->base_flag(), target_flag, route, best_cost)) {
+			if (!best_route) {
+				log("Economy::find_best_supply: %s-Economy %u of player %u: Error, COULD NOT FIND A "
+				    "ROUTE!",
+				    type_ ? "WORKER" : "WARE", serial_, owner_.player_number());
+				// To help to debug this a bit:
+				log(" ... ware/worker at: %3dx%3d, requestor at: %3dx%3d! Item: %s.\n",
+				    supp.get_position(game)->base_flag().get_position().x,
+				    supp.get_position(game)->base_flag().get_position().y, target_flag.get_position().x,
+				    target_flag.get_position().y,
+				    type_ == wwWARE ? game.tribes().get_ware_descr(req.get_index())->name().c_str() :
+				                      game.tribes().get_worker_descr(req.get_index())->name().c_str());
+			}
+			continue;
+		}
 		best_supply = &supp;
 		best_route = route;
 		best_cost = route->get_totalcost();
 	}
 
 	if (!best_route)
-		return 0;
+		return nullptr;
 
 	cost = best_cost;
 	return best_supply;
 }
 
 struct RequestSupplyPair {
-	bool is_item;
-	bool is_worker;
-	Ware_Index ware;
 	TrackPtr<Request> request;
-	TrackPtr<Supply>  supply;
+	TrackPtr<Supply> supply;
 	int32_t priority;
 
 	/**
@@ -744,50 +654,46 @@ struct RequestSupplyPair {
 	uint32_t pairid;
 
 	struct Compare {
-		bool operator()
-			(RequestSupplyPair const & p1, RequestSupplyPair const & p2)
-		{
-			return
-				p1.priority == p2.priority ? p1.pairid < p2.pairid :
-				p1.priority <  p2.priority;
+		bool operator()(const RequestSupplyPair& p1, const RequestSupplyPair& p2) {
+			return p1.priority == p2.priority ? p1.pairid < p2.pairid : p1.priority < p2.priority;
 		}
 	};
 };
 
-typedef
-	std::priority_queue
-	<RequestSupplyPair,
-	std::vector<RequestSupplyPair>,
-	RequestSupplyPair::Compare>
-	RSPairQueue;
+using RSPairQueue = std::
+   priority_queue<RequestSupplyPair, std::vector<RequestSupplyPair>, RequestSupplyPair::Compare>;
 
 struct RSPairStruct {
 	RSPairQueue queue;
 	uint32_t pairid;
 	int32_t nexttimer;
 
-	RSPairStruct() : pairid(0) {}
+	RSPairStruct() : pairid(0), nexttimer(0) {
+	}
 };
 
 /**
  * Walk all Requests and find potential transfer candidates.
-*/
-void Economy::_process_requests(Game & game, RSPairStruct & s)
-{
-	container_iterate_const(RequestList, m_requests, i) {
-		Request & req = **i.current;
+ */
+void Economy::process_requests(Game& game, RSPairStruct* supply_pairs) {
+	// Algorithm can decide that wares are not to be delivered to constructionsite
+	// right now, therefore we need to shcedule next pairing
+	bool postponed_pairing_needed = false;
+	for (Request* temp_req : requests_) {
+		Request& req = *temp_req;
 
 		// We somehow get desynced request lists that don't trigger desync
 		// alerts, so add info to the sync stream here.
 		{
-			::StreamWrite & ss = game.syncstream();
-			ss.Unsigned8 (req.get_type  ());
-			ss.Unsigned8 (req.get_index ().value());
-			ss.Unsigned32(req.target    ().serial());
+			::StreamWrite& ss = game.syncstream();
+			ss.unsigned_8(SyncEntry::kProcessRequests);
+			ss.unsigned_8(req.get_type());
+			ss.unsigned_8(req.get_index());
+			ss.unsigned_32(req.target().serial());
 		}
 
-		int32_t cost; // estimated time in milliseconds to fulfill Request
-		Supply * const supp = _find_best_supply(game, req, cost);
+		int32_t cost;  // estimated time in milliseconds to fulfill Request
+		Supply* const supp = find_best_supply(game, req, cost);
 
 		if (!supp)
 			continue;
@@ -795,67 +701,57 @@ void Economy::_process_requests(Game & game, RSPairStruct & s)
 		if (!supp->is_active()) {
 			// Calculate the time the building will be forced to idle waiting
 			// for the request
-			int32_t const idletime =
-				game.get_gametime() + 15000 + 2 * cost - req.get_required_time();
+			int32_t const idletime = game.get_gametime() + 15000 + 2 * cost - req.get_required_time();
 			// If the building wouldn't have to idle, we wait with the request
 			if (idletime < -200) {
-				if (s.nexttimer < 0 || s.nexttimer > -idletime)
-					s.nexttimer = -idletime;
+				if (supply_pairs->nexttimer < 0 || supply_pairs->nexttimer > -idletime)
+					supply_pairs->nexttimer = -idletime;
 
 				continue;
 			}
 		}
 
-		int32_t const priority = req.get_priority (cost);
-		if (priority < 0)
+		int32_t const priority = req.get_priority(cost);
+		if (priority < 0) {
+			// We dont "pair" the req with supply now, and dont set s.nexttimer right now
+			// but should not forget about this productionsite waiting for the building material
+			postponed_pairing_needed = true;
 			continue;
+		}
 
 		// Otherwise, consider this request/supply pair for queueing
 		RequestSupplyPair rsp;
-
-		rsp.is_item = false;
-		rsp.is_worker = false;
-
-		switch (req.get_type()) {
-		case Request::WARE:    rsp.is_item    = true; break;
-		case Request::WORKER:  rsp.is_worker  = true; break;
-		default:
-			assert(false);
-		}
-
-		rsp.ware = req.get_index();
-		rsp.request  = &req;
+		rsp.request = &req;
 		rsp.supply = supp;
 		rsp.priority = priority;
-		rsp.pairid = ++s.pairid;
+		rsp.pairid = ++supply_pairs->pairid;
 
-		s.queue.push(rsp);
+		supply_pairs->queue.push(rsp);
+	}
+	if (postponed_pairing_needed && supply_pairs->nexttimer < 0) {
+		// so no other pair set the timer, so we set them now for after 30 seconds
+		supply_pairs->nexttimer = 30 * 1000;
 	}
 }
 
 /**
  * Try to fulfill open requests with available supplies.
  */
-void Economy::_balance_requestsupply(Game & game)
-{
+void Economy::balance_requestsupply(Game& game) {
 	RSPairStruct rsps;
 	rsps.nexttimer = -1;
 
 	//  Try to fulfill Requests.
-	_process_requests(game, rsps);
+	process_requests(game, &rsps);
 
 	//  Now execute request/supply pairs.
-	while (rsps.queue.size()) {
+	while (!rsps.queue.empty()) {
 		RequestSupplyPair rsp = rsps.queue.top();
 
 		rsps.queue.pop();
 
-		if
-			(!rsp.request                ||
-			 !rsp.supply                 ||
-			 !_has_request(*rsp.request) ||
-			 !rsp.supply->nr_supplies(game, *rsp.request))
-		{
+		if (!rsp.request || !rsp.supply || !has_request(*rsp.request) ||
+		    !rsp.supply->nr_supplies(game, *rsp.request)) {
 			rsps.nexttimer = 200;
 			continue;
 		}
@@ -864,110 +760,158 @@ void Economy::_balance_requestsupply(Game & game)
 		rsp.request->set_last_request_time(game.get_gametime());
 
 		//  for multiple wares
-		if (rsp.request && _has_request(*rsp.request))
+		if (rsp.request && has_request(*rsp.request))
 			rsps.nexttimer = 200;
 	}
 
-	if (rsps.nexttimer > 0) //  restart the timer, if necessary
-		_start_request_timer(rsps.nexttimer);
+	if (rsps.nexttimer > 0) {  //  restart the timer, if necessary
+		start_request_timer(rsps.nexttimer);
+	}
 }
+
+std::unique_ptr<Soldier> Economy::soldier_prototype_ =
+   nullptr;  // minimal invasive fix of bug 1236538
 
 /**
  * Check whether there is a supply for the given request. If the request is a
  * worker request without supply, attempt to create a new worker in a warehouse.
  */
-void Economy::_create_requested_worker(Game & game, Ware_Index index)
-{
-	unsigned demand = 0;
+void Economy::create_requested_worker(Game& game, DescriptionIndex index) {
+	assert(type_ == wwWORKER);
 
-	container_iterate_const(RequestList, m_requests, j) {
-		const Request & req = **j.current;
+	bool soldier_level_check;
+	const TribeDescr& tribe = owner().tribe();
+	const WorkerDescr& w_desc = *tribe.get_worker_descr(index);
+	// Request mapped to demand
+	std::map<Request*, uint32_t> open_requests;
+	uint32_t total_demand = 0;
 
-		if (req.get_type() != Request::WORKER || req.get_index() != index)
+	// Make a dummy soldier, which should never be assigned to any economy
+	// Minimal invasive fix of bug 1236538: never create a rookie for a request
+	// that required a hero.
+	if (upcast(const SoldierDescr, s_desc, &w_desc)) {
+		if (!soldier_prototype_) {
+			Soldier* test_rookie = static_cast<Soldier*>(&(s_desc->create_object()));
+			soldier_prototype_.reset(test_rookie);
+		}
+		soldier_level_check = true;
+	} else {
+		soldier_level_check = false;
+	}
+
+	for (Request* temp_req : requests_) {
+		const Request& req = *temp_req;
+
+		if (req.get_type() != wwWORKER || req.get_index() != index)
 			continue;
 
 		// need to check for each request separately, because esp. soldier
 		// requests have different specific requirements
-		if (m_supplies.have_supplies(game, req))
+		if (supplies_.have_supplies(game, req))
 			continue;
 
-		demand += req.get_open_count();
+		// Requests for heroes should not trigger the creation of more rookies
+		if (soldier_level_check) {
+			if (!(req.get_requirements().check(*soldier_prototype_)))
+				continue;
+		}
+
+		uint32_t current_demand = req.get_open_count();
+		if (current_demand > 0) {
+			open_requests.emplace(temp_req, current_demand);
+			total_demand += current_demand;
+		}
 	}
 
-	if (!demand)
+	if (total_demand == 0) {
+		assert(open_requests.empty());
 		return;
+	}
+	assert(!open_requests.empty());
 
-	// We have worker demand that is not fulfilled by supplies
+	// We have worker demands that are not fulfilled by supplies.
 	// Find warehouses where we can create the required workers,
-	// and collect stats about existing build prerequisites
-	Tribe_Descr const & tribe = owner().tribe();
-	Worker_Descr const & w_desc = *tribe.get_worker_descr(index);
-	Worker_Descr::Buildcost const & cost = w_desc.buildcost();
-	std::vector<uint32_t> total_available;
-	uint32_t total_planned = 0;
+	// and collect stats about existing build prerequisites.
+	// Since the wares may be in places belonging to a different worker economy,
+	// we will request their ware economies to bring them into warehouses belonging to this worker
+	// economy.
+	const WorkerDescr::Buildcost& cost = w_desc.buildcost();
+	Quantity total_planned = 0;
+	std::map<Economy*, std::map<DescriptionIndex, Quantity>> available_wares;
 
-	total_available.insert(total_available.begin(), cost.size(), 0);
-
-	for (uint32_t n_wh = 0; n_wh < warehouses().size(); ++n_wh) {
-		Warehouse * wh = m_warehouses[n_wh];
-
+	for (Warehouse* wh : warehouses_) {
 		uint32_t planned = wh->get_planned_workers(game, index);
 		total_planned += planned;
 
 		while (wh->can_create_worker(game, index)) {
 			wh->create_worker(game, index);
-			if (!--demand)
+			--open_requests.begin()->second;
+			--total_demand;
+			if (!open_requests.begin()->second) {
+				open_requests.erase(open_requests.begin());
+			}
+			if (total_demand == 0) {
+				assert(open_requests.empty());
 				return;
+			}
 		}
 
-		std::vector<uint32_t> wh_available =
-			wh->calc_available_for_worker(game, index);
-		assert(wh_available.size() == total_available.size());
-
-		for (uint32_t idx = 0; idx < total_available.size(); ++idx)
-			total_available[idx] += wh_available[idx];
+		Economy* eco = wh->get_economy(wwWARE);
+		for (const auto& pair : cost) {
+			DescriptionIndex di = tribe.ware_index(pair.first);
+			if (tribe.has_ware(di)) {
+				available_wares[eco][di] += eco->get_wares_or_workers().stock(di);
+			}
+		}
 	}
 
-	// Couldn't create enough workers now.
-	// Let's see how many we have resources for that may be scattered
-	// throughout the economy.
-	uint32_t can_create = std::numeric_limits<uint32_t>::max();
-	uint32_t idx = 0;
-	uint32_t scarcest_idx = 0;
-	container_iterate_const(Worker_Descr::Buildcost, cost, bc) {
-		uint32_t cc = total_available[idx] / bc.current->second;
-		if (cc <= can_create) {
-			scarcest_idx = idx;
-			can_create = cc;
+	// Couldn't create enough workers now. Adjust the warehouses' plans to bring the wares together.
+	for (const auto& pair : available_wares) {
+		uint32_t min_workers_createable = std::numeric_limits<Quantity>::max();
+		bool plan_at_least_one = false;
+		for (const auto& costpair : cost) {
+			DescriptionIndex di = tribe.ware_index(costpair.first);
+			if (tribe.has_ware(di)) {
+				min_workers_createable =
+				   std::min(min_workers_createable, pair.second.at(di) / costpair.second);
+				plan_at_least_one |= pair.first->target_quantity(di).permanent == 0;
+			} else {
+				di = tribe.safe_worker_index(costpair.first);
+				assert(tribe.has_worker(di));
+				min_workers_createable = std::max(min_workers_createable, wares_or_workers_.stock(di));
+				// TODO(Nordfriese): As long as worker buildcosts contain only wares and carriers, this
+				// is fine. Revisit this function if we ever have a worker whose buildcost contains a
+				// worker with a buildcost.
+			}
 		}
-		idx++;
-	}
-
-	if (total_planned > can_create) {
-		// Eliminate some excessive plans, to make sure we never request more than
-		// there are supplies for (otherwise, cyclic transportation might happen)
-		// Note that supplies might suddenly disappear outside our control because
-		// of loss of land or silly player actions.
-		for (uint32_t n_wh = 0; n_wh < warehouses().size(); ++n_wh) {
-			Warehouse * wh = m_warehouses[n_wh];
-
-			uint32_t planned = wh->get_planned_workers(game, index);
-			uint32_t reduce = std::min(planned, total_planned - can_create);
-			wh->plan_workers(game, index, planned - reduce);
-			total_planned -= reduce;
-		}
-	} else if (total_planned < demand) {
-		uint32_t plan_goal = std::min(can_create, demand);
-
-		for (uint32_t n_wh = 0; n_wh < warehouses().size(); ++n_wh) {
-			Warehouse * wh = m_warehouses[n_wh];
-			uint32_t supply =
-				wh->calc_available_for_worker(game, index)[scarcest_idx];
-
-			total_planned -= wh->get_planned_workers(game, index);
-			uint32_t plan = std::min(supply, plan_goal - total_planned);
-			wh->plan_workers(game, index, plan);
-			total_planned += plan;
+		for (Warehouse* wh : warehouses_) {
+			if (wh->get_economy(wwWARE) == pair.first) {
+				const uint32_t planned = wh->get_planned_workers(game, index);
+				assert(total_planned >= planned);
+				uint32_t nr_to_plan = planned;
+				if (total_planned > total_demand) {
+					// Cancel some excess plans
+					nr_to_plan -= std::min(nr_to_plan, total_planned - total_demand);
+				} else if (total_planned < total_demand) {
+					// Check how many we can plan
+					if (min_workers_createable > 0) {
+						uint32_t newly_planning =
+						   std::min(min_workers_createable, total_demand - total_planned);
+						min_workers_createable -= newly_planning;
+						nr_to_plan += newly_planning;
+					} else if (plan_at_least_one) {
+						// Plan at least one worker somewhere if a target quantity is 0 to trigger tool
+						// production
+						nr_to_plan = std::max(nr_to_plan, 1u);
+						plan_at_least_one = false;
+					}
+				}
+				wh->plan_workers(game, index, nr_to_plan);
+				total_planned = total_planned + nr_to_plan - planned;
+				if (total_planned == total_demand) {
+					return;
+				}
+			}
 		}
 	}
 }
@@ -976,86 +920,94 @@ void Economy::_create_requested_worker(Game & game, Ware_Index index)
  * Walk all Requests and find requests of workers than aren't supplied. Then
  * try to create the worker at warehouses.
  */
-void Economy::_create_requested_workers(Game & game)
-{
-	if (!warehouses().size())
+void Economy::create_requested_workers(Game& game) {
+	if (type_ != wwWORKER || !warehouses().size())
 		return;
 
-	Tribe_Descr const & tribe = owner().tribe();
-	for
-		(Ware_Index index = Ware_Index::First();
-		 index < tribe.get_nrworkers(); ++index)
-	{
-		if (!owner().is_worker_type_allowed(index))
-			continue;
-		if (!tribe.get_worker_descr(index)->is_buildable())
-			continue;
-
-		_create_requested_worker(game, index);
+	for (const DescriptionIndex& worker_index : owner().tribe().workers()) {
+		if (owner().is_worker_type_allowed(worker_index) &&
+		    owner().tribe().get_worker_descr(worker_index)->is_buildable()) {
+			create_requested_worker(game, worker_index);
+		}
 	}
 }
 
 /**
- * Helper function for \ref _handle_active_supplies
+ * Helper function for \ref handle_active_supplies
  */
-static bool accept_warehouse_if_policy
-	(Warehouse & wh, bool isworker,
-	 Ware_Index ware, Warehouse::StockPolicy policy)
-{
-	return wh.get_stock_policy(isworker, ware) == policy;
+static bool accept_warehouse_if_policy(Warehouse& wh,
+                                       WareWorker type,
+                                       DescriptionIndex ware,
+                                       StockPolicy policy) {
+	return wh.get_stock_policy(type, ware) == policy;
 }
 
 /**
  * Send all active supplies (wares that are outside on the road network without
  * being sent to a specific request) to a warehouse.
  */
-void Economy::_handle_active_supplies(Game & game)
-{
+void Economy::handle_active_supplies(Game& game) {
 	if (!warehouses().size())
 		return;
 
-	typedef std::vector<std::pair<Supply *, Warehouse *> > Assignments;
+	using Assignments = std::vector<std::pair<Supply*, Warehouse*>>;
 	Assignments assignments;
 
-	for (uint32_t idx = 0; idx < m_supplies.get_nrsupplies(); ++idx) {
-		Supply & supply = m_supplies[idx];
+	for (uint32_t idx = 0; idx < supplies_.get_nrsupplies(); ++idx) {
+		Supply& supply = supplies_[idx];
 		if (supply.has_storage())
 			continue;
 
-		bool isworker;
-		Ware_Index ware;
-		supply.get_ware_type(isworker, ware);
+		WareWorker wwtype;
+		DescriptionIndex ware;
+		supply.get_ware_type(wwtype, ware);
+		assert(wwtype == type_);
 
 		bool haveprefer = false;
 		bool havenormal = false;
-		for (uint32_t nwh = 0; nwh < m_warehouses.size(); ++nwh) {
-			Warehouse * wh = m_warehouses[nwh];
-			Warehouse::StockPolicy policy = wh->get_stock_policy(isworker, ware);
-			if (policy == Warehouse::SP_Prefer) {
+
+		// One of preferred warehouses (if any) with lowest stock of ware/worker
+		Warehouse* preferred_wh = nullptr;
+		// Stock of particular ware in preferred warehouse
+		uint32_t preferred_wh_stock = std::numeric_limits<uint32_t>::max();
+
+		for (uint32_t nwh = 0; nwh < warehouses_.size(); ++nwh) {
+			Warehouse* wh = warehouses_[nwh];
+			StockPolicy policy = wh->get_stock_policy(type_, ware);
+			if (policy == StockPolicy::kPrefer) {
 				haveprefer = true;
-				break;
-			}
-			if (policy == Warehouse::SP_Normal)
+
+				// Getting count of worker/ware
+				uint32_t current_stock;
+				current_stock =
+				   type_ == wwWARE ? wh->get_wares().stock(ware) : wh->get_workers().stock(ware);
+				// Stocks lower then in previous one?
+				if (current_stock < preferred_wh_stock) {
+					preferred_wh = wh;
+					preferred_wh_stock = current_stock;
+				}
+			} else if (policy == StockPolicy::kNormal) {
 				havenormal = true;
+			}
 		}
-		if (!havenormal && !haveprefer && !isworker)
+		if (!havenormal && !haveprefer && type_ == wwWARE) {
 			continue;
+		}
 
-		Warehouse * wh = find_closest_warehouse
-			(supply.get_position(game)->base_flag(), !isworker, 0, 0,
-			 (!haveprefer && !havenormal)
-			 ?
-			 WarehouseAcceptFn()
-			 :
-			 boost::bind
-				(&accept_warehouse_if_policy,
-				 _1, isworker, ware,
-				 haveprefer ? Warehouse::SP_Prefer : Warehouse::SP_Normal));
-
+		// We either have one preferred warehouse picked up or walk on roads to find nearest one
+		Warehouse* wh = nullptr;
+		if (preferred_wh) {
+			wh = preferred_wh;
+		} else {
+			wh = find_closest_warehouse(
+			   supply.get_position(game)->base_flag(), nullptr, 0,
+			   (!havenormal) ?
+			      WarehouseAcceptFn() :
+			      boost::bind(&accept_warehouse_if_policy, _1, type_, ware, StockPolicy::kNormal));
+		}
 		if (!wh) {
-			log
-				("Warning: Economy::_handle_active_supplies "
-				 "didn't find warehouse\n");
+			log("Warning: Economy::handle_active_supplies "
+			    "didn't find warehouse\n");
 			return;
 		}
 
@@ -1063,38 +1015,38 @@ void Economy::_handle_active_supplies(Game & game)
 	}
 
 	// Actually start with the transfers in a separate second phase,
-	// to avoid potential future problems caused by the m_supplies changing
+	// to avoid potential future problems caused by the supplies_ changing
 	// under us in some way.
-	::StreamWrite & ss = game.syncstream();
-	ss.Unsigned32(0x02decafa); // appears as facade02 in sync stream
-	ss.Unsigned32(assignments.size());
+	::StreamWrite& ss = game.syncstream();
+	ss.unsigned_8(SyncEntry::kHandleActiveSupplies);
+	ss.unsigned_32(assignments.size());
 
-	container_iterate_const(Assignments, assignments, it) {
-		ss.Unsigned32(it.current->first->get_position(game)->serial());
-		ss.Unsigned32(it.current->second->serial());
+	for (const auto& temp_assignment : assignments) {
+		ss.unsigned_32(temp_assignment.first->get_position(game)->serial());
+		ss.unsigned_32(temp_assignment.second->serial());
 
-		it.current->first->send_to_storage(game, it.current->second);
+		temp_assignment.first->send_to_storage(game, temp_assignment.second);
 	}
 }
 
 /**
  * Balance Requests and Supplies by collecting and weighing pairs, and
  * starting transfers for them.
-*/
-void Economy::balance(uint32_t const timerid)
-{
-	if (m_request_timerid != timerid)
+ */
+void Economy::balance(uint32_t const timerid) {
+	if (request_timerid_ != timerid) {
 		return;
-	++m_request_timerid;
+	}
+	++request_timerid_;
 
-	Game & game = ref_cast<Game, Editor_Game_Base>(owner().egbase());
+	Game& game = dynamic_cast<Game&>(owner().egbase());
 
-	_create_requested_workers (game);
+	check_splits();
 
-	_balance_requestsupply(game);
+	create_requested_workers(game);
 
-	_handle_active_supplies(game);
+	balance_requestsupply(game);
+
+	handle_active_supplies(game);
 }
-
-}
-
+}  // namespace Widelands

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2011 by the Widelands Development Team
+ * Copyright (C) 2007-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,125 +13,127 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "interactive_spectator.h"
+#include "wui/interactive_spectator.h"
 
-#include "chat.h"
-#include "chatoverlay.h"
-#include "fieldaction.h"
-#include "game_chat_menu.h"
-#include "game_main_menu_save_game.h"
-#include "game_options_menu.h"
-#include "gamecontroller.h"
-#include "general_statistics_menu.h"
-#include "graphic/graphic.h"
-#include "i18n.h"
-
-#include "ui_basic/editbox.h"
-#include "ui_basic/multilinetextarea.h"
+#include "base/i18n.h"
+#include "base/macros.h"
+#include "chat/chat.h"
+#include "logic/game_controller.h"
+#include "logic/player.h"
 #include "ui_basic/textarea.h"
 #include "ui_basic/unique_window.h"
-
-#include "upcast.h"
+#include "wui/fieldaction.h"
+#include "wui/game_chat_menu.h"
+#include "wui/game_main_menu_save_game.h"
+#include "wui/general_statistics_menu.h"
 
 /**
  * Setup the replay UI for the given game.
  */
-Interactive_Spectator::Interactive_Spectator
-	(Widelands::Game & _game, Section & global_s, bool const multiplayer)
-	:
-	Interactive_GameBase(_game, global_s, OBSERVER, multiplayer),
+InteractiveSpectator::InteractiveSpectator(Widelands::Game& g,
+                                           Section& global_s,
+                                           bool const multiplayer,
+                                           ChatProvider* chat_provider)
+   : InteractiveGameBase(g, global_s, OBSERVER, multiplayer, chat_provider) {
+	add_main_menu();
 
-#define INIT_BTN(picture, name, callback, tooltip)                            \
- TOOLBAR_BUTTON_COMMON_PARAMETERS(name),                                      \
- g_gr->get_picture(PicMod_Game, "pics/" picture ".png"),                      \
- boost::bind(&Interactive_Spectator::callback, boost::ref(*this)),            \
- tooltip                                                                      \
+	add_toolbar_button("wui/menus/statistics_general", "general_stats", _("Statistics"),
+	                   &menu_windows_.stats_general, true);
+	menu_windows_.stats_general.open_window = [this] {
+		new GeneralStatisticsMenu(*this, menu_windows_.stats_general);
+	};
 
-	m_toggle_chat
-		(INIT_BTN("menu_chat", "chat", toggle_chat, _("Chat"))),
-	m_exit
-		(INIT_BTN("menu_exit_game", "exit_replay", exit_btn, _("Exit Replay"))),
-	m_save
-		(INIT_BTN("menu_save_game", "save_game", save_btn, _("Save Game"))),
-	m_toggle_options_menu
-		(INIT_BTN("menu_options_menu", "options_menu",
-					 toggle_options_menu, _("Options"))),
-	m_toggle_statistics
-		(INIT_BTN("menu_general_stats", "general_stats",
-					 toggle_statistics, _("Statistics"))),
-	m_toggle_minimap
-		(INIT_BTN("menu_toggle_minimap", "minimap",
-					 toggle_minimap, _("Minimap")))
-{
-	m_toolbar.set_layout_toplevel(true);
-	m_toolbar.add(&m_toggle_chat,            UI::Box::AlignLeft);
-	if (!multiplayer) {
-		m_toolbar.add(&m_exit,                UI::Box::AlignLeft);
-		m_toolbar.add(&m_save,                UI::Box::AlignLeft);
-	} else
-		m_toolbar.add(&m_toggle_options_menu, UI::Box::AlignLeft);
-	m_toolbar.add(&m_toggle_statistics,      UI::Box::AlignLeft);
-	m_toolbar.add(&m_toggle_minimap,         UI::Box::AlignLeft);
+	toolbar()->add_space(15);
 
-	// TODO : instead of making unneeded buttons invisible after generation,
-	// they should not at all be generated. -> implement more dynamic toolbar UI
-	if (multiplayer) {
-		m_chatOverlay =
-			new ChatOverlay(this, 10, 25, get_w() - 10, get_h() - 25);
-		m_exit.set_visible(false);
-		m_exit.set_enabled(false);
-		m_save.set_visible(false);
-		m_save.set_enabled(false);
-	} else {
-		m_toggle_chat.set_visible(false);
-		m_toggle_chat.set_enabled(false);
-		m_toggle_options_menu.set_visible(false);
-		m_toggle_options_menu.set_enabled(false);
+	add_mapview_menu(MiniMapType::kStaticViewWindow);
+	add_showhide_menu();
+	add_gamespeed_menu();
+
+	toolbar()->add_space(15);
+
+	if (is_multiplayer()) {
+		add_chat_ui();
 	}
 
-	adjust_toolbar_position();
+	finalize_toolbar();
 
 	// Setup all screen elements
-	fieldclicked.set(this, &Interactive_Spectator::node_action);
-
-	set_display_flag(dfSpeed, true);
-
-#define INIT_BTN_HOOKS(registry, btn)                                        \
- registry.onCreate = boost::bind(&UI::Button::set_perm_pressed, &btn, true);  \
- registry.onDelete = boost::bind(&UI::Button::set_perm_pressed, &btn, false); \
- if (registry.window) btn.set_perm_pressed(true);                            \
-
-	INIT_BTN_HOOKS(m_chat, m_toggle_chat)
-	INIT_BTN_HOOKS(m_options, m_toggle_options_menu)
-	INIT_BTN_HOOKS(m_mainm_windows.general_stats, m_toggle_statistics)
-	INIT_BTN_HOOKS(m_mainm_windows.savegame, m_save)
-	INIT_BTN_HOOKS(minimap_registry(), m_toggle_minimap)
-
+	map_view()->field_clicked.connect([this](const Widelands::NodeAndTriangle<>& node_and_triangle) {
+		node_action(node_and_triangle);
+	});
 }
 
-Interactive_Spectator::~Interactive_Spectator() {
-	// We need to remove these callbacks because the opened window might
-        // (theoretically) live longer than 'this' window, and thus the
-        // buttons. The assertions are safeguards in case somewhere else in the
-        // code someone would overwrite our hooks.
+void InteractiveSpectator::draw(RenderTarget& dst) {
+	// This fixes a crash with displaying an error dialog during loading.
+	if (!game().is_loaded())
+		return;
 
-#define DEINIT_BTN_HOOKS(registry, btn)                                                \
- assert (registry.onCreate == boost::bind(&UI::Button::set_perm_pressed, &btn, true));  \
- assert (registry.onDelete == boost::bind(&UI::Button::set_perm_pressed, &btn, false)); \
- registry.onCreate = 0;                                                                \
- registry.onDelete = 0;                                                                \
-
-	DEINIT_BTN_HOOKS(m_chat, m_toggle_chat)
-	DEINIT_BTN_HOOKS(m_options, m_toggle_options_menu)
-	DEINIT_BTN_HOOKS(m_mainm_windows.general_stats, m_toggle_statistics)
-	DEINIT_BTN_HOOKS(m_mainm_windows.savegame, m_save)
-	DEINIT_BTN_HOOKS(minimap_registry(), m_toggle_minimap)
+	draw_map_view(map_view(), &dst);
 }
 
+void InteractiveSpectator::draw_map_view(MapView* given_map_view, RenderTarget* dst) {
+	// A spectator cannot build roads.
+	assert(road_building_overlays().steepness_indicators.empty());
+	assert(road_building_overlays().road_previews.empty());
+	assert(waterway_building_overlays().steepness_indicators.empty());
+	assert(waterway_building_overlays().road_previews.empty());
+
+	// In-game, selection can never be on triangles or have a radius.
+	assert(get_sel_radius() == 0);
+	assert(!get_sel_triangles());
+
+	const Widelands::Game& the_game = game();
+	const Widelands::Map& map = the_game.map();
+	auto* fields_to_draw =
+	   given_map_view->draw_terrain(the_game, get_workarea_overlays(map), false, dst);
+	const float scale = 1.f / given_map_view->view().zoom;
+	const uint32_t gametime = the_game.get_gametime();
+
+	const auto info_to_draw = get_info_to_draw(!given_map_view->is_animating());
+	for (size_t idx = 0; idx < fields_to_draw->size(); ++idx) {
+		const FieldsToDraw::Field& field = fields_to_draw->at(idx);
+
+		draw_bridges(dst, &field, gametime, scale);
+		draw_border_markers(field, scale, *fields_to_draw, dst);
+
+		Widelands::BaseImmovable* const imm = field.fcoords.field->get_immovable();
+		if (imm != nullptr && imm->get_positions(the_game).front() == field.fcoords) {
+			imm->draw(gametime, info_to_draw, field.rendertarget_pixel, field.fcoords, scale, dst);
+		}
+
+		for (Widelands::Bob* bob = field.fcoords.field->get_first_bob(); bob;
+		     bob = bob->get_next_bob()) {
+			bob->draw(the_game, info_to_draw, field.rendertarget_pixel, field.fcoords, scale, dst);
+		}
+
+		// Draw build help.
+		if (buildhelp()) {
+			auto caps = Widelands::NodeCaps::CAPS_NONE;
+			const Widelands::PlayerNumber nr_players = map.get_nrplayers();
+			iterate_players_existing(p, nr_players, the_game, player) {
+				const Widelands::NodeCaps nc = player->get_buildcaps(field.fcoords);
+				if (nc > Widelands::NodeCaps::CAPS_NONE) {
+					caps = nc;
+					break;
+				}
+			}
+			const auto* overlay = get_buildhelp_overlay(caps);
+			if (overlay != nullptr) {
+				blit_field_overlay(dst, field, overlay->pic, overlay->hotspot, scale);
+			}
+		}
+
+		// Blit the selection marker.
+		if (field.fcoords == get_sel_pos().node) {
+			const Image* pic = get_sel_picture();
+			blit_field_overlay(dst, field, pic, Vector2i(pic->width() / 2, pic->height() / 2), scale);
+		}
+	}
+}
 
 /**
  * \return "our" player.
@@ -139,149 +141,53 @@ Interactive_Spectator::~Interactive_Spectator() {
  * \note We might want to implement a feature to watch a specific player,
  * including their vision. Then this should be changed.
  */
-Widelands::Player * Interactive_Spectator::get_player() const throw ()
-{
-	return 0;
+Widelands::Player* InteractiveSpectator::get_player() const {
+	return nullptr;
 }
 
-
-/**
- * Called just before the game starts, after postload, init and gfxload
- */
-void Interactive_Spectator::start()
-{
-	Widelands::Map & map = game().map();
-	Overlay_Manager & overlay_manager = map.overlay_manager();
-	overlay_manager.show_buildhelp(false);
-
-	// Recalc whole map for changed owner stuff
-	map.recalc_whole_map();
-}
-
-
-// Toolbar button callback functions.
-void Interactive_Spectator::toggle_chat()
-{
-	if (m_chat.window)
-		delete m_chat.window;
-	else if (m_chatProvider)
-		new GameChatMenu(this, m_chat, *m_chatProvider);
-}
-
-
-void Interactive_Spectator::exit_btn()
-{
-	if (m_chatenabled) //  == multiplayer
-		return;
-	end_modal(0);
-}
-
-
-void Interactive_Spectator::save_btn()
-{
-	if (m_chatenabled) //  == multiplayer
-		return;
-	if (m_mainm_windows.savegame.window)
-		delete m_mainm_windows.savegame.window;
-	else {
-		game().gameController()->setDesiredSpeed(0);
-		new Game_Main_Menu_Save_Game(*this, m_mainm_windows.savegame);
-	}
-}
-
-
-void Interactive_Spectator::toggle_options_menu() {
-	if (!m_chatenabled) //  == !multiplayer
-		return;
-	if (m_options.window)
-		delete m_options.window;
-	else
-		new GameOptionsMenu(*this, m_options, m_mainm_windows);
-}
-
-
-void Interactive_Spectator::toggle_statistics() {
-	if (m_mainm_windows.general_stats.window)
-		delete m_mainm_windows.general_stats.window;
-	else
-		new General_Statistics_Menu(*this, m_mainm_windows.general_stats);
-}
-
-
-bool Interactive_Spectator::can_see(Widelands::Player_Number) const
-{
+bool InteractiveSpectator::player_hears_field(const Widelands::Coords&) const {
 	return true;
 }
-bool Interactive_Spectator::can_act(Widelands::Player_Number) const
-{
-	return false;
-}
-Widelands::Player_Number Interactive_Spectator::player_number() const
-{
-	return 0;
+
+// Toolbar button callback functions.
+void InteractiveSpectator::exit_btn() {
+	if (is_multiplayer()) {
+		return;
+	}
+	end_modal<UI::Panel::Returncodes>(UI::Panel::Returncodes::kBack);
 }
 
+bool InteractiveSpectator::can_see(Widelands::PlayerNumber) const {
+	return true;
+}
+bool InteractiveSpectator::can_act(Widelands::PlayerNumber) const {
+	return false;
+}
+Widelands::PlayerNumber InteractiveSpectator::player_number() const {
+	return 0;
+}
 
 /**
  * Observer has clicked on the given node; bring up the context menu.
  */
-void Interactive_Spectator::node_action() {
-	if //  special case for buildings
-		(upcast
-		 	(Widelands::Building,
-		 	 building,
-		 	 egbase().map().get_immovable(get_sel_pos().node)))
-		return building->show_options(*this);
+void InteractiveSpectator::node_action(const Widelands::NodeAndTriangle<>& node_and_triangle) {
+	// Special case for buildings
+	if (is_a(Widelands::Building, egbase().map().get_immovable(node_and_triangle.node))) {
+		show_building_window(node_and_triangle.node, false, false);
+		return;
+	}
+
+	if (try_show_ship_window()) {
+		return;
+	}
 
 	//  everything else can bring up the temporary dialog
-	show_field_action(this, 0, &m_fieldaction);
+	show_field_action(this, nullptr, &fieldaction_);
 }
-
 
 /**
  * Global in-game keypresses:
  */
-bool Interactive_Spectator::handle_key(bool const down, SDL_keysym const code)
-{
-	if (down)
-		switch (code.sym) {
-		case SDLK_m:
-			toggle_minimap();
-			return true;
-
-		case SDLK_c:
-			set_display_flag(dfShowCensus, !get_display_flag(dfShowCensus));
-			return true;
-
-		case SDLK_s:
-			if (code.mod & (KMOD_LCTRL | KMOD_RCTRL)) {
-				game().gameController()->setDesiredSpeed(0);
-				new Game_Main_Menu_Save_Game(*this, m_mainm_windows.savegame);
-			} else
-				set_display_flag
-					(dfShowStatistics, !get_display_flag(dfShowStatistics));
-			return true;
-
-		case SDLK_f:
-			g_gr->toggle_fullscreen();
-			return true;
-
-		case SDLK_RETURN:
-		case SDLK_KP_ENTER:
-			if (!m_chatProvider | !m_chatenabled)
-				break;
-
-			if (!m_chat.window)
-				new GameChatMenu(this, m_chat, *m_chatProvider);
-
-			ref_cast<GameChatMenu, UI::UniqueWindow>(*m_chat.window)
-				.enter_chat_message();
-			return true;
-
-		default:
-			break;
-		}
-
-	return Interactive_GameBase::handle_key(down, code);
+bool InteractiveSpectator::handle_key(bool const down, SDL_Keysym const code) {
+	return InteractiveGameBase::handle_key(down, code);
 }
-

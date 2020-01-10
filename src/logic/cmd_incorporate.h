@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,37 +13,38 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef CMD_INCORPORATE_H
-#define CMD_INCORPORATE_H
+#ifndef WL_LOGIC_CMD_INCORPORATE_H
+#define WL_LOGIC_CMD_INCORPORATE_H
 
-#include "cmd_queue.h"
-#include "worker.h"
+#include "logic/cmd_queue.h"
+#include "logic/map_objects/tribes/worker.h"
 
 namespace Widelands {
 
-#define CMD_INCORPORATE_VERSION 1
+struct CmdIncorporate : public GameLogicCommand {
+	CmdIncorporate() : GameLogicCommand(0), worker(nullptr) {
+	}  // For savegame loading
+	CmdIncorporate(uint32_t const t, Worker* const w) : GameLogicCommand(t), worker(w) {
+	}
 
-struct Cmd_Incorporate : public GameLogicCommand {
-	Cmd_Incorporate() : GameLogicCommand(0) {} // For savegame loading
-	Cmd_Incorporate (int32_t const t, Worker * const w)
-		: GameLogicCommand(t), worker(w)
-	{}
+	void execute(Game& game) override {
+		worker->incorporate(game);
+	}
 
-	void execute (Game & game) {worker->incorporate(game);}
+	void write(FileWrite&, EditorGameBase&, MapObjectSaver&) override;
+	void read(FileRead&, EditorGameBase&, MapObjectLoader&) override;
 
-	void Write(FileWrite &, Editor_Game_Base &, Map_Map_Object_Saver  &);
-	void Read (FileRead  &, Editor_Game_Base &, Map_Map_Object_Loader &);
-
-	virtual uint8_t id() const {return QUEUE_CMD_INCORPORATE;}
+	QueueCommandTypes id() const override {
+		return QueueCommandTypes::kIncorporate;
+	}
 
 private:
-	Worker * worker;
+	Worker* worker;
 };
+}  // namespace Widelands
 
-}
-
-#endif
+#endif  // end of include guard: WL_LOGIC_CMD_INCORPORATE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2010 by the Widelands Development Team
+ * Copyright (C) 2008-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,15 +13,16 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef WAREHOUSESUPPLY_H
-#define WAREHOUSESUPPLY_H
+#ifndef WL_ECONOMY_WAREHOUSESUPPLY_H
+#define WL_ECONOMY_WAREHOUSESUPPLY_H
 
-#include "supply.h"
-#include "logic/warelist.h"
+#include "economy/supply.h"
+#include "logic/map_objects/tribes/warelist.h"
+#include "logic/map_objects/tribes/wareworker.h"
 
 namespace Widelands {
 
@@ -30,46 +31,52 @@ WarehouseSupply is the implementation of Supply that is used by Warehouses.
 It also manages the list of wares in the warehouse.
 */
 struct WarehouseSupply : public Supply {
-	WarehouseSupply(Warehouse * const wh) : m_economy(0), m_warehouse(wh) {}
-	virtual ~WarehouseSupply();
-
-	void set_economy(Economy *);
-
-	void set_nrworkers(Ware_Index);
-	void set_nrwares  (Ware_Index);
-
-	WareList const & get_wares  () const {return m_wares;}
-	WareList const & get_workers() const {return m_workers;}
-	uint32_t stock_wares  (Ware_Index const i) const {
-		return m_wares  .stock(i);
+	explicit WarehouseSupply(Warehouse* const wh)
+	   : ware_economy_(nullptr), worker_economy_(nullptr), warehouse_(wh) {
 	}
-	uint32_t stock_workers(Ware_Index const i) const {
-		return m_workers.stock(i);
+	~WarehouseSupply() override;
+
+	void set_economy(Economy*, WareWorker);
+
+	void set_nrworkers(DescriptionIndex);
+	void set_nrwares(DescriptionIndex);
+
+	const WareList& get_wares() const {
+		return wares_;
 	}
-	void add_wares     (Ware_Index, uint32_t count);
-	void remove_wares  (Ware_Index, uint32_t count);
-	void add_workers   (Ware_Index, uint32_t count);
-	void remove_workers(Ware_Index, uint32_t count);
+	const WareList& get_workers() const {
+		return workers_;
+	}
+	Quantity stock_wares(DescriptionIndex const i) const {
+		return wares_.stock(i);
+	}
+	Quantity stock_workers(DescriptionIndex const i) const {
+		return workers_.stock(i);
+	}
+	void add_wares(DescriptionIndex, Quantity count);
+	void remove_wares(DescriptionIndex, Quantity count);
+	void add_workers(DescriptionIndex, Quantity count);
+	void remove_workers(DescriptionIndex, Quantity count);
 
 	// Supply implementation
-	virtual PlayerImmovable * get_position(Game &);
-	virtual bool is_active() const throw ();
-	virtual bool has_storage() const throw ();
-	virtual void get_ware_type(bool & isworker, Ware_Index & ware) const;
+	PlayerImmovable* get_position(Game&) override;
+	bool is_active() const override;
+	SupplyProviders provider_type(Game*) const override;
+	bool has_storage() const override;
+	void get_ware_type(WareWorker& type, DescriptionIndex& ware) const override;
 
-	virtual void send_to_storage(Game &, Warehouse * wh);
-	virtual uint32_t nr_supplies(Game const &, Request const &) const;
-	virtual WareInstance & launch_item(Game &, Request const &);
-	virtual Worker & launch_worker(Game &, Request const &);
+	void send_to_storage(Game&, Warehouse* wh) override;
+	uint32_t nr_supplies(const Game&, const Request&) const override;
+	WareInstance& launch_ware(Game&, const Request&) override;
+	Worker& launch_worker(Game&, const Request&) override;
 
 private:
-	Economy   * m_economy;
-	WareList    m_wares;
-	WareList    m_workers; //  we use this to keep the soldiers
-	Warehouse * m_warehouse;
+	Economy* ware_economy_;
+	Economy* worker_economy_;
+	WareList wares_;
+	WareList workers_;  //  we use this to keep the soldiers
+	Warehouse* warehouse_;
 };
+}  // namespace Widelands
 
-}
-
-
-#endif
+#endif  // end of include guard: WL_ECONOMY_WAREHOUSESUPPLY_H

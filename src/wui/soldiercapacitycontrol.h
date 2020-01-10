@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,26 +13,25 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef _SOLDIERCAPACITYCONTROL_H_
-#define _SOLDIERCAPACITYCONTROL_H_
+#ifndef WL_WUI_SOLDIERCAPACITYCONTROL_H
+#define WL_WUI_SOLDIERCAPACITYCONTROL_H
 
-struct Interactive_GameBase;
+class InteractiveGameBase;
 
 namespace UI {
-struct Panel;
+class Panel;
 }
 
 namespace Widelands {
-struct Building;
+class Building;
 }
 
-UI::Panel * create_soldier_capacity_control
-	(UI::Panel & parent,
-	 Interactive_GameBase & igb,
-	 Widelands::Building & building);
+UI::Panel* create_soldier_capacity_control(UI::Panel& parent,
+                                           InteractiveGameBase& igb,
+                                           Widelands::Building& building);
 
-#endif // _SOLDIERLIST_H_
+#endif  // end of include guard: WL_WUI_SOLDIERCAPACITYCONTROL_H

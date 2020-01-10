@@ -1,7 +1,28 @@
+# Scripting documentation ignores
+/doc/sphinx/build/
+/doc/sphinx/source/autogen*
+/doc/sphinx/source/auxiliary.rst
+
+# the compile.sh file creates some files, links and directories
+/build
+update.sh
+/widelands
+wl_map*_info
+wl_create_spritesheet
+locale
+VERSION
+
+# Local KDevelop settings files
+**/.kdev_include_paths
+
+# Python compiled files.
 *.pyc
-*.sw?
-src/scripting/doc/build
-src/scripting/doc/source/wl_*.rst
-src/scripting/doc/source/globals.rst
-build/native-*
-build/sconf_temp/
+
+# OS-X Meta Files
+.DS_Store
+
+# QT Creator settings
+CMakeLists.txt.user*
+
+# Translation validation files
+po_validation

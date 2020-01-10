@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,47 +13,41 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "game.h"
-#include "game_data_error.h"
+#include "logic/cmd_calculate_statistics.h"
 
-#include "cmd_calculate_statistics.h"
-
+#include "io/fileread.h"
+#include "io/filewrite.h"
+#include "logic/game.h"
+#include "logic/game_data_error.h"
 
 namespace Widelands {
 
-void Cmd_CalculateStatistics::execute (Game & game) {
+void CmdCalculateStatistics::execute(Game& game) {
 	game.sample_statistics();
-	game.enqueue_command
-		(new Cmd_CalculateStatistics
-		 (game.get_gametime() + STATISTICS_SAMPLE_TIME));
+	game.enqueue_command(new CmdCalculateStatistics(game.get_gametime() + kStatisticsSampleTime));
 }
 
-#define CMD_CALCULATE_STATISTICS_VERSION 1
-void Cmd_CalculateStatistics::Read
-	(FileRead & fr, Editor_Game_Base & egbase, Map_Map_Object_Loader & mol)
-{
+constexpr uint16_t kCurrentPacketVersion = 1;
+
+void CmdCalculateStatistics::read(FileRead& fr, EditorGameBase& egbase, MapObjectLoader& mol) {
 	try {
-		uint16_t const packet_version = fr.Unsigned16();
-		if (packet_version == CMD_CALCULATE_STATISTICS_VERSION) {
-			GameLogicCommand::Read(fr, egbase, mol);
-		} else
-			throw game_data_error
-				(_("unknown/unhandled version %u"), packet_version);
-	} catch (_wexception const & e) {
-		throw game_data_error(_("calculate statistics function: %s"), e.what());
+		uint16_t const packet_version = fr.unsigned_16();
+		if (packet_version == kCurrentPacketVersion) {
+			GameLogicCommand::read(fr, egbase, mol);
+		} else {
+			throw UnhandledVersionError(
+			   "CmdCalculateStatistics", packet_version, kCurrentPacketVersion);
+		}
+	} catch (const WException& e) {
+		throw GameDataError("calculate statistics function: %s", e.what());
 	}
 }
-void Cmd_CalculateStatistics::Write
-	(FileWrite & fw, Editor_Game_Base & egbase, Map_Map_Object_Saver & mos)
-{
-	fw.Unsigned16(CMD_CALCULATE_STATISTICS_VERSION);
-	GameLogicCommand::Write(fw, egbase, mos);
-
+void CmdCalculateStatistics::write(FileWrite& fw, EditorGameBase& egbase, MapObjectSaver& mos) {
+	fw.unsigned_16(kCurrentPacketVersion);
+	GameLogicCommand::write(fw, egbase, mos);
 }
-
-}
-
+}  // namespace Widelands

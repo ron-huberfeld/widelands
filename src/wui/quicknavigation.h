@@ -1,8 +1,5 @@
-
-namespace Widelands {
-class Map;}
 /*
- * Copyright (C) 2010 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -16,79 +13,59 @@ class Map;}
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef QUICKNAVIGATION_H
-#define QUICKNAVIGATION_H
+#ifndef WL_WUI_QUICKNAVIGATION_H
+#define WL_WUI_QUICKNAVIGATION_H
 
-#include <boost/function.hpp>
-#include <stdint.h>
 #include <vector>
 
 #include <SDL_keyboard.h>
+#include <boost/function.hpp>
+#include <stdint.h>
 
-#include "point.h"
-
-namespace Widelands {
-struct Editor_Game_Base;
-}
+#include "base/vector.h"
+#include "wui/mapview.h"
 
 /**
  * Provide quick navigation shortcuts.
  *
- * \note This functionality is really only used by \ref Interactive_Base,
+ * \note This functionality is really only used by \ref InteractiveBase,
  * but it is moved in its own structure to avoid overloading that class.
  */
 struct QuickNavigation {
-	typedef boost::function<void (Point)> SetViewFn;
-
-	QuickNavigation(const Widelands::Editor_Game_Base & egbase, uint32_t screenwidth, uint32_t screenheight);
-
-	void set_setview(const SetViewFn & fn);
-
-	void view_changed(Point point, bool jump);
-
-	bool handle_key(bool down, SDL_keysym key);
-
-private:
-	void setview(Point where);
-
-	const Widelands::Editor_Game_Base & m_egbase;
-	uint32_t m_screenwidth;
-	uint32_t m_screenheight;
-
-	/**
-	 * This is the callback function that we call to request a change in view position.
-	 */
-	SetViewFn m_setview;
-
-	bool m_havefirst;
-	bool m_update;
-	Point m_anchor;
-	Point m_current;
-
-	/**
-	 * Keeps track of what the player has looked at to allow jumping back and forth
-	 * in the history.
-	 */
-	/*@{*/
-	std::vector<Point> m_history;
-	std::vector<Point>::size_type m_history_index;
-	/*@}*/
-
 	struct Landmark {
-		Point point;
+		MapView::View view;
 		bool set;
 
-		Landmark() : set(false) {}
+		Landmark() : set(false) {
+		}
 	};
 
-	/**
-	 * Landmarks that were set explicitly by the player, mapped on the 0-9 keys.
-	 */
-	Landmark m_landmarks[10];
+	explicit QuickNavigation(MapView* map_view);
+
+	// Set the landmark for 'index' to 'view'. 'index' must be < 10.
+	void set_landmark(size_t index, const MapView::View& view);
+
+	// Returns a pointer to the first element in the landmarks array
+	const std::vector<Landmark>& landmarks() const {
+		return landmarks_;
+	}
+
+	bool handle_key(bool down, SDL_Keysym key);
+
+private:
+	void view_changed();
+
+	MapView* map_view_;
+
+	bool havefirst_;
+	MapView::View current_;
+
+	// Landmarks that were set explicitly by the player, mapped on the 0-9 keys.
+	std::vector<Landmark> landmarks_;
 };
 
-#endif // QUICKNAVIGATION_H
+#endif  // end of include guard: WL_WUI_QUICKNAVIGATION_H

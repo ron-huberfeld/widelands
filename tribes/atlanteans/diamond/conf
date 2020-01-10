@@ -1,8 +1,0 @@
-help=_These wonderful diamonds are used to build some exclusive buildings. They are mined in a crystal mine.
-
-preciousness=2
-
-# No description yet
-[idle]
-pics=idle.png
-hotspot=4 7

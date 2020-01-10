@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,45 +13,40 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef IDLEWORKERSUPPLY_H
-#define IDLEWORKERSUPPLY_H
+#ifndef WL_ECONOMY_IDLEWORKERSUPPLY_H
+#define WL_ECONOMY_IDLEWORKERSUPPLY_H
 
-#include "supply.h"
-
-#ifdef _MSC_VER
-#define __attribute__(x)
-#endif
+#include "economy/supply.h"
 
 namespace Widelands {
 class Worker;
-struct Economy;
+class Economy;
 
 struct IdleWorkerSupply : public Supply {
-	IdleWorkerSupply(Worker &);
-	~IdleWorkerSupply();
+	explicit IdleWorkerSupply(Worker&);
+	~IdleWorkerSupply() override;
 
-	void set_economy(Economy *);
-	virtual PlayerImmovable * get_position(Game &);
+	void set_economy(Economy*);
+	PlayerImmovable* get_position(Game&) override;
 
-	virtual bool is_active() const throw ();
-	virtual bool has_storage() const throw ();
-	virtual void get_ware_type(bool & isworker, Ware_Index & ware) const;
-	virtual void send_to_storage(Game &, Warehouse * wh);
+	bool is_active() const override;
+	SupplyProviders provider_type(Game*) const override;
+	bool has_storage() const override;
+	void get_ware_type(WareWorker& type, DescriptionIndex& ware) const override;
+	void send_to_storage(Game&, Warehouse* wh) override;
 
-	virtual uint32_t nr_supplies(Game const &, Request const &) const;
-	virtual WareInstance & launch_item(Game &, Request const &)
-		__attribute__ ((noreturn));
-	virtual Worker & launch_worker(Game &, Request const &);
+	uint32_t nr_supplies(const Game&, const Request&) const override;
+	WareInstance& launch_ware(Game&, const Request&) override;
+	Worker& launch_worker(Game&, const Request&) override;
 
 private:
-	Worker  & m_worker;
-	Economy * m_economy;
+	Worker& worker_;
+	Economy* economy_;
 };
+}  // namespace Widelands
 
-}
-
-#endif
+#endif  // end of include guard: WL_ECONOMY_IDLEWORKERSUPPLY_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,51 +13,44 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_MAIN_H
-#define FULLSCREEN_MENU_MAIN_H
-
-#include "base.h"
+#ifndef WL_UI_FSMENU_MAIN_H
+#define WL_UI_FSMENU_MAIN_H
 
 #include "ui_basic/button.h"
+#include "ui_basic/icon.h"
 #include "ui_basic/textarea.h"
+#include "ui_fsmenu/main_menu.h"
 
 /**
  * This runs the main menu. There, you can select
  * between different playmodes, exit and so on.
-*/
-struct Fullscreen_Menu_Main : public Fullscreen_Menu_Base {
-	Fullscreen_Menu_Main();
-	enum {
-		mm_playtutorial,
-		mm_singleplayer,
-		mm_multiplayer,
-		mm_replay,
-		mm_editor,
-		mm_options,
-		mm_readme,
-		mm_license,
-		mm_exit
-	};
+ */
+class FullscreenMenuMain : public FullscreenMenuMainMenu {
+public:
+	FullscreenMenuMain();
+
+protected:
+	void clicked_ok() override;
+
 private:
-	uint32_t                                    m_butx;
-	uint32_t                                    m_butw;
-	uint32_t                                    m_buth;
-	std::string                                 wlcr;
-	UI::Callback_Button                     playtutorial;
-	UI::Callback_Button                     singleplayer;
-	UI::Callback_Button                     multiplayer;
-	UI::Callback_Button                     replay;
-	UI::Callback_Button                     editor;
-	UI::Callback_Button                     options;
-	UI::Callback_Button                     readme;
-	UI::Callback_Button                     license;
-	UI::Callback_Button                     exit;
-	UI::Textarea                                version;
-	UI::Textarea                                copyright;
+	void layout() override;
+
+	UI::Icon logo_icon_;
+	UI::Button playtutorial;
+	UI::Button singleplayer;
+	UI::Button multiplayer;
+	UI::Button replay;
+	UI::Button editor;
+	UI::Button options;
+	UI::Button about;
+	UI::Button exit;
+	UI::Textarea version;
+	UI::Textarea copyright;
+	UI::Textarea gpl;
 };
 
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_MAIN_H

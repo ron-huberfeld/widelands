@@ -8,12 +8,11 @@ would be in the stoneage, if not for using these files :-).
 
 The Widelands Development Team thanks the following projects:
 
-    libSDL
-    libSDL_mixer
-    libSDL_net
-    libSDL_image
-    libSDL_ttf
-    * All files from SDL-Project
+    libSDL2
+    libSDL2_mixer
+    libSDL2_image
+    libSDL2_ttf
+    * All files from SDL2-Project
     * Project can be found at http://www.libsdl.org/
 
 
@@ -65,35 +64,33 @@ The Widelands Development Team thanks the following projects:
     * for their Portal and hosting us till early 2010
 
 
-    GGZ
-    * Project can be found at http://www.ggzgamingzone.org/
-
-
     Bazaar
     * By Canonical Ltd.
     * Project can be found at http://bazaar.canonical.com/en/
 
-   
+
     Lua
     * by Lablua, PUC-Rio
     * http://www.lua.org
 
-    Pluto
-    * by Ben Sunshine-Hill, Rob Hoelz
-    * http://luaforge.net/projects/pluto/
+
+    Eris
+    * by Florian Nücke
+    * https://github.com/fnuecke/eris
 
 
 and last but not least:
-    http://www.launchpad.org
-    * for their bazaar service
+    https://github.com/
+    * for their git service
     * bugtracker
     * and many more services :-)
+and before
+    http://www.launchpad.org
+    * for their bazaar service
 
 
 
 A big thank you goes to "Studio 10a", owned by Stichting Voorburgse en
 Leidschendamse Lokale Omroep Midvliet, for supporting the recording of
 some of our sound effects!
-
-February 2011
 

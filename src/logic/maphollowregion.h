@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007-2009 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,14 +13,14 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef MAPHOLLOWREGION_H
-#define MAPHOLLOWREGION_H
+#ifndef WL_LOGIC_MAPHOLLOWREGION_H
+#define WL_LOGIC_MAPHOLLOWREGION_H
 
-#include "map.h"
+#include "logic/map.h"
 
 namespace Widelands {
 
@@ -31,11 +31,11 @@ namespace Widelands {
  *
  * \note The order in which fields are returned is not guarantueed.
  */
-template <typename Area_type = Area<> > struct MapHollowRegion {
-	MapHollowRegion(const Map & map, const HollowArea<Area_type> hollow_area);
+template <typename AreaType = Area<>> struct MapHollowRegion {
+	MapHollowRegion(const Map& map, const HollowArea<AreaType>& hollow_area);
 
-	typename Area_type::Coords_type const & location() const {
-		return m_hollow_area;
+	const typename AreaType::CoordsType& location() const {
+		return hollow_area_;
 	}
 
 	/**
@@ -53,26 +53,39 @@ template <typename Area_type = Area<> > struct MapHollowRegion {
 	 * iteration, while advance keeps returning true. When finally advance
 	 * returns false, it means that the iteration is done.
 	 */
-	bool advance(const Map &) throw ();
+	bool advance(const Map&);
 
-private:
-	enum Phase {
-		None   = 0, // not initialized or completed
-		Top    = 1, // above the hole
-		Upper  = 2, // upper half
-		Lower  = 4, // lower half
-		Bottom = 8, // below the hole
+	enum class Phase {
+		kNone = 0,    // not initialized or completed
+		kTop = 1,     // above the hole
+		kUpper = 2,   // upper half
+		kLower = 4,   // lower half
+		kBottom = 8,  // below the hole
 	};
 
-	HollowArea<Area_type> m_hollow_area;
-	Phase m_phase;
-	const uint32_t m_delta_radius;
-	uint32_t m_row; // # of rows completed in this phase
-	uint32_t m_rowwidth; // # of fields to return per row
-	uint32_t m_rowpos; // # of fields we have returned in this row
-	typename Area_type::Coords_type m_left; //  left-most node of current row
+private:
+	HollowArea<AreaType> hollow_area_;
+	Phase phase_;
+	const uint32_t delta_radius_;
+	uint32_t row_;                        // # of rows completed in this phase
+	uint32_t rowwidth_;                   // # of fields to return per row
+	uint32_t rowpos_;                     // # of fields we have returned in this row
+	typename AreaType::CoordsType left_;  //  left-most node of current row
 };
 
-}
+// Forward declarations of template instantiations
+template <>
+MapHollowRegion<Area<>>::MapHollowRegion(const Map& map, const HollowArea<Area<>>& hollow_area);
+template <> bool MapHollowRegion<Area<>>::advance(const Map& map);
 
-#endif
+// A bunch of operators that turn MapHollowRegion<Area<>>::Phase into a bitwise combinable class.
+inline MapHollowRegion<Area<>>::Phase operator|(MapHollowRegion<Area<>>::Phase left,
+                                                MapHollowRegion<Area<>>::Phase right) {
+	return MapHollowRegion<Area<>>::Phase(static_cast<int>(left) | static_cast<int>(right));
+}
+inline int operator&(MapHollowRegion<Area<>>::Phase left, MapHollowRegion<Area<>>::Phase right) {
+	return static_cast<int>(left) & static_cast<int>(right);
+}
+}  // namespace Widelands
+
+#endif  // end of include guard: WL_LOGIC_MAPHOLLOWREGION_H

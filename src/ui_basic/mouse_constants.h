@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,17 +13,17 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_MOUSE_CONSTANTS_H
-#define UI_MOUSE_CONSTANTS_H
+#ifndef WL_UI_BASIC_MOUSE_CONSTANTS_H
+#define WL_UI_BASIC_MOUSE_CONSTANTS_H
 
 #define BUTTON_EDGE_BRIGHT_FACTOR 60
 #define MOUSE_OVER_BRIGHT_FACTOR 15
 #define MOUSE_BUTTON_AUTOREPEAT_DELAY 250
-#define MOUSE_BUTTON_AUTOREPEAT_TICK   50
-#define DOUBLE_CLICK_INTERVAL         500
+#define MOUSE_BUTTON_AUTOREPEAT_TICK 50
+#define DOUBLE_CLICK_INTERVAL 500
 
-#endif
+#endif  // end of include guard: WL_UI_BASIC_MOUSE_CONSTANTS_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,146 +13,232 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef EDITORINTERACTIVE_H
-#define EDITORINTERACTIVE_H
+#ifndef WL_EDITOR_EDITORINTERACTIVE_H
+#define WL_EDITOR_EDITORINTERACTIVE_H
 
+#include <memory>
+
+#include "editor/tools/history.h"
+#include "editor/tools/increase_height_tool.h"
+#include "editor/tools/increase_resources_tool.h"
+#include "editor/tools/info_tool.h"
+#include "editor/tools/noise_height_tool.h"
+#include "editor/tools/place_critter_tool.h"
+#include "editor/tools/place_immovable_tool.h"
+#include "editor/tools/resize_tool.h"
+#include "editor/tools/set_origin_tool.h"
+#include "editor/tools/set_port_space_tool.h"
+#include "editor/tools/set_starting_pos_tool.h"
+#include "editor/tools/set_terrain_tool.h"
+#include "logic/map.h"
+#include "notifications/notifications.h"
 #include "ui_basic/button.h"
+#include "ui_basic/dropdown.h"
 #include "ui_basic/unique_window.h"
 #include "wui/interactive_base.h"
 
-#include "tools/editor_increase_height_tool.h"
-#include "tools/editor_increase_resources_tool.h"
-#include "tools/editor_info_tool.h"
-#include "tools/editor_make_infrastructure_tool.h"
-#include "tools/editor_noise_height_tool.h"
-#include "tools/editor_place_bob_tool.h"
-#include "tools/editor_place_immovable_tool.h"
-#include "tools/editor_set_origin_tool.h"
-#include "tools/editor_set_starting_pos_tool.h"
-#include "tools/editor_set_terrain_tool.h"
-
-
-class Editor;
-struct Editor_Tool;
+class EditorTool;
 
 /**
  * This is the EditorInteractive. It is like the InteractivePlayer class,
  * but for the Editor instead of the game
  */
-struct Editor_Interactive : public Interactive_Base {
-	friend struct Editor_Tool_Menu;
-
-	static void run_editor(std::string const & filename);
-
-private:
-	Editor_Interactive(Widelands::Editor_Game_Base &);
-
+class EditorInteractive : public InteractiveBase {
 public:
-	void register_overlays();
-	void load(std::string const & filename);
+	struct Tools {
+		Tools(const Widelands::Map& map)
+		   : current_pointer(&info),
+		     use_tool(EditorTool::First),
+		     increase_height(decrease_height, set_height),
+		     noise_height(set_height),
+		     place_immovable(delete_immovable),
+		     place_critter(delete_critter),
+		     increase_resources(decrease_resources, set_resources),
+		     set_port_space(unset_port_space),
+		     set_origin(),
+		     resize(map.get_width(), map.get_height()) {
+		}
+		EditorTool& current() const {
+			return *current_pointer;
+		}
+		using ToolVector = std::vector<EditorTool*>;
+		EditorTool* current_pointer;
+		EditorTool::ToolIndex use_tool;
+		EditorInfoTool info;
+		EditorSetHeightTool set_height;
+		EditorDecreaseHeightTool decrease_height;
+		EditorIncreaseHeightTool increase_height;
+		EditorNoiseHeightTool noise_height;
+		EditorSetTerrainTool set_terrain;
+		EditorDeleteImmovableTool delete_immovable;
+		EditorPlaceImmovableTool place_immovable;
+		EditorSetStartingPosTool set_starting_pos;
+		EditorDeleteCritterTool delete_critter;
+		EditorPlaceCritterTool place_critter;
+		EditorDecreaseResourcesTool decrease_resources;
+		EditorSetResourcesTool set_resources;
+		EditorIncreaseResourcesTool increase_resources;
+		EditorSetPortSpaceTool set_port_space;
+		EditorUnsetPortSpaceTool unset_port_space;
+		EditorSetOriginTool set_origin;
+		EditorResizeTool resize;
+	};
+	explicit EditorInteractive(Widelands::EditorGameBase&);
+
+	// Runs the Editor via the commandline --editor flag. Will load 'filename' as a
+	// map and run 'script_to_run' directly after all initialization is done.
+	static void run_editor(const std::string& filename, const std::string& script_to_run);
+
+	void load(const std::string& filename);
+	void cleanup_for_load() override;
 
 	// leaf functions from base class
-	void start();
-	void think();
+	void start() override;
+	void think() override;
 
-	void map_clicked();
-	virtual void set_sel_pos(Widelands::Node_and_Triangle<>);
+	void map_clicked(const Widelands::NodeAndTriangle<>& node_and_triangle, bool draw);
+	void set_sel_pos(Widelands::NodeAndTriangle<>) override;
 	void set_sel_radius_and_update_menu(uint32_t);
+	void stop_painting();
 
-	//  gets called when a keyboard event occurs
-	bool handle_key(bool down, SDL_keysym);
+	//  Handle UI elements.
+	bool handle_key(bool down, SDL_Keysym) override;
+	bool handle_mousepress(uint8_t btn, int32_t x, int32_t y) override;
+	bool handle_mouserelease(uint8_t btn, int32_t x, int32_t y) override;
+	void draw(RenderTarget&) override;
 
-	struct Tools {
-		Tools()
-			:
-			current_pointer   (&increase_height),
-			use_tool          (Editor_Tool::First),
-			increase_height   (decrease_height, set_height),
-			noise_height      (set_height),
-			place_immovable   (delete_immovable),
-			place_bob         (delete_bob),
-			increase_resources(decrease_resources, set_resources)
-		{}
-		Editor_Tool & current() const throw () {return *current_pointer;}
-		typedef std::vector<Editor_Tool *> Tool_Vector;
-		typedef Tool_Vector::size_type Index;
-		//Tool_Vector                     tools;
-		Editor_Tool *                   current_pointer;
-		Editor_Tool::Tool_Index         use_tool;
-		Editor_Info_Tool                info;
-		Editor_Set_Height_Tool          set_height;
-		Editor_Decrease_Height_Tool     decrease_height;
-		Editor_Increase_Height_Tool     increase_height;
-		Editor_Noise_Height_Tool        noise_height;
-		Editor_Set_Terrain_Tool         set_terrain;
-		Editor_Delete_Immovable_Tool    delete_immovable;
-		Editor_Place_Immovable_Tool     place_immovable;
-		Editor_Set_Starting_Pos_Tool    set_starting_pos;
-		Editor_Delete_Bob_Tool          delete_bob;
-		Editor_Place_Bob_Tool           place_bob;
-		Editor_Decrease_Resources_Tool  decrease_resources;
-		Editor_Set_Resources_Tool       set_resources;
-		Editor_Increase_Resources_Tool  increase_resources;
-		Editor_Set_Origin_Tool          set_origin;
-		Editor_Make_Infrastructure_Tool make_infrastructure;
-	} tools;
+	void select_tool(EditorTool&, EditorTool::ToolIndex);
 
-	void select_tool(Editor_Tool &, Editor_Tool::Tool_Index);
-
-	Widelands::Player * get_player() const throw () {return 0;}
+	Widelands::Player* get_player() const override {
+		return nullptr;
+	}
 
 	// action functions
 	void exit();
 
-	//  reference functions
-	void   reference_player_tribe(Widelands::Player_Number, void const *);
-	void unreference_player_tribe(Widelands::Player_Number, void const *);
-	bool is_player_tribe_referenced(Widelands::Player_Number);
-	void set_need_save(bool const t) {m_need_save = t;}
+	void set_need_save(bool const t) {
+		need_save_ = t;
+	}
 
-	/// Must be called when the world is changed. Takes care of closing the tool
-	/// menus that are showing elements from the old world.
-	void change_world();
+	// Signalizes that the egbase().map has changed. This can happen when a new
+	// map is created or loaded, in which case all windows should be closed and
+	// all tools should be reset. Otherwise, something else happened that
+	// requires the UI to be completely recalculated, for example the origin of
+	// the map has changed.
+	enum class MapWas {
+		kGloballyMutated,
+		kReplaced,
+	};
+	void map_changed(const MapWas& action);
+
+	// Access to the tools.
+	Tools* tools();
 
 private:
-	void toggle_buildhelp     ();
-	void tool_menu_btn        ();
-	void toolsize_menu_btn    ();
-	void toggle_mainmenu      ();
-	void toggle_playermenu    ();
+	// For referencing the items in mainmenu_
+	enum class MainMenuEntry {
+		kNewMap,
+		kNewRandomMap,
+		kLoadMap,
+		kSaveMap,
+		kMapOptions,
+		kExitEditor,
+	};
+
+	// For referencing the items in toolmenu_
+	enum class ToolMenuEntry {
+		kChangeHeight,
+		kRandomHeight,
+		kTerrain,
+		kImmovables,
+		kAnimals,
+		kResources,
+		kPortSpace,
+		kPlayers,
+		kMapOrigin,
+		kMapSize,
+		kFieldInfo
+	};
+
+	// For referencing the items in showhidemenu_
+	enum class ShowHideEntry { kBuildingSpaces, kGrid, kAnimals, kImmovables, kResources };
+
+	// Adds the mainmenu_ to the toolbar
+	void add_main_menu();
+	// Takes the appropriate action when an item in the mainmenu_ is selected
+	void main_menu_selected(MainMenuEntry entry);
+	// Adds the toolmenu_ to the toolbar
+	void add_tool_menu();
+	// Takes the appropriate action when an item in the toolmenu_ is selected
+	void tool_menu_selected(ToolMenuEntry entry);
+
+	// Adds the showhidemenu_ to the toolbar
+	void add_showhide_menu();
+	void rebuild_showhide_menu() override;
+	// Takes the appropriate action when an item in the showhidemenu_ is selected
+	void showhide_menu_selected(ShowHideEntry entry);
+
+	bool player_hears_field(const Widelands::Coords& coords) const override;
+
+	// Show / hide the resources overlays in the mapview
+	void toggle_resources();
+	// Show / hide the immovables in the mapview
+	void toggle_immovables();
+	// Show / hide the bobs in the mapview
+	void toggle_bobs();
+	void toggle_grid();
 
 	//  state variables
-	bool m_need_save;
-	struct Player_References {
-		int32_t      player;
-		void const * object;
-	};
-	std::vector<Player_References> m_player_tribe_references;
+	bool need_save_;
+	uint32_t realtime_;
+	bool is_painting_;
 
-	int32_t m_realtime;
+	// All unique menu windows
+	struct EditorMenuWindows {
+		UI::UniqueWindow::Registry newmap;
+		UI::UniqueWindow::Registry newrandommap;
+		UI::UniqueWindow::Registry savemap;
+		UI::UniqueWindow::Registry loadmap;
+		UI::UniqueWindow::Registry mapoptions;
 
-	UI::UniqueWindow::Registry m_toolmenu;
+		UI::UniqueWindow::Registry toolsize;
 
-	UI::UniqueWindow::Registry m_toolsizemenu;
-	UI::UniqueWindow::Registry m_playermenu;
-	UI::UniqueWindow::Registry m_mainmenu;
-	UI::UniqueWindow::Registry m_heightmenu;
-	UI::UniqueWindow::Registry m_noise_heightmenu;
-	UI::UniqueWindow::Registry m_terrainmenu;
-	UI::UniqueWindow::Registry m_immovablemenu;
-	UI::UniqueWindow::Registry m_bobmenu;
-	UI::UniqueWindow::Registry m_resourcesmenu;
+		UI::UniqueWindow::Registry help;
+	} menu_windows_;
 
-	UI::Callback_Button m_toggle_main_menu;
-	UI::Callback_Button m_toggle_tool_menu;
-	UI::Callback_Button m_toggle_toolsize_menu;
-	UI::Callback_Button m_toggle_minimap;
-	UI::Callback_Button m_toggle_buildhelp;
-	UI::Callback_Button m_toggle_player_menu;
+	// All unique tool windows for those tools that have them
+	struct EditorToolWindows {
+		UI::UniqueWindow::Registry height;
+		UI::UniqueWindow::Registry noiseheight;
+		UI::UniqueWindow::Registry terrain;
+		UI::UniqueWindow::Registry immovables;
+		UI::UniqueWindow::Registry critters;
+		UI::UniqueWindow::Registry resources;
+		UI::UniqueWindow::Registry players;
+		UI::UniqueWindow::Registry resizemap;
+	} tool_windows_;
+
+	// Main menu on the toolbar
+	UI::Dropdown<MainMenuEntry> mainmenu_;
+	// Tools menu on the toolbar
+	UI::Dropdown<ToolMenuEntry> toolmenu_;
+	// Show / Hide menu on the toolbar
+	UI::Dropdown<ShowHideEntry> showhidemenu_;
+
+	UI::Button* undo_;
+	UI::Button* redo_;
+
+	std::unique_ptr<Tools> tools_;
+	std::unique_ptr<EditorHistory> history_;
+
+	bool draw_resources_ = true;
+	bool draw_immovables_ = true;
+	bool draw_bobs_ = true;
+	bool draw_grid_ = true;
 };
 
-#endif
+#endif  // end of include guard: WL_EDITOR_EDITORINTERACTIVE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2011 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,122 +13,140 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 /*
  * The original version of the word wrapping algorithm was taken
- * from Wesnoth -- http://www.wesnoth.org
+ * from Wesnoth -- https://www.wesnoth.org
  */
 
-#include "wordwrap.h"
+#include "graphic/wordwrap.h"
 
-#include "font_handler.h"
-#include "log.h"
-#include "rendertarget.h"
+#include <SDL_ttf.h>
+#include <boost/format.hpp>
+#include <unicode/unistr.h>
+
+#include "base/log.h"
+#include "graphic/color.h"
+#include "graphic/font_handler.h"
+#include "graphic/graphic.h"
+#include "graphic/rendertarget.h"
+#include "graphic/text/bidi.h"
+#include "graphic/text/font_io.h"
+#include "graphic/text_layout.h"
+
+namespace {
+std::string as_editorfont(const std::string& text, int ptsize, const RGBColor& clr) {
+	// UI Text is always bold due to historic reasons
+	static boost::format f(
+	   "<rt keep_spaces=1><p><font face=sans size=%i bold=1 shadow=1 color=%s>%s</font></p></rt>");
+	f % ptsize;
+	f % clr.hex_value();
+	f % richtext_escape(text);
+	return f.str();
+}
+
+int text_width(const std::string& text, int ptsize) {
+	RGBColor color(0, 0, 0);
+	return UI::g_fh->render(as_editorfont(text, ptsize - UI::g_fh->fontset()->size_offset(), color))
+	   ->width();
+}
+
+int text_height(int ptsize) {
+	RGBColor font_color(0, 0, 0);
+	const UI::FontStyleInfo font_info("sans", font_color, ptsize, false, false, false, false);
+	return UI::g_fh
+	   ->render(as_richtext_paragraph(UI::g_fh->fontset()->representative_character(), font_info))
+	   ->height();
+}
+}  // namespace
 
 namespace UI {
 
-/**
- * Initialize the wordwrap object with an unlimited line length
- * and a default-constructed text style.
- */
-WordWrap::WordWrap() :
-	m_wrapwidth(std::numeric_limits<uint32_t>::max())
-{
-}
+WordWrap::WordWrap(int fontsize, const RGBColor& color, uint32_t gwrapwidth)
+   : draw_caret_(false),
+     fontsize_(fontsize),
+     color_(color),
+     font_(RT::load_font(UI::g_fh->fontset()->sans_bold(), fontsize_)) {
+	wrapwidth_ = gwrapwidth;
 
-WordWrap::WordWrap(const TextStyle & style, uint32_t wrapwidth) :
-	m_style(style)
-{
-	m_wrapwidth = wrapwidth;
-
-	if (m_wrapwidth < std::numeric_limits<uint32_t>::max()) {
-		if (m_wrapwidth < 2 * LINE_MARGIN)
-			m_wrapwidth = 0;
+	if (wrapwidth_ < std::numeric_limits<uint32_t>::max()) {
+		if (wrapwidth_ < 2 * kLineMargin)
+			wrapwidth_ = 0;
 		else
-			m_wrapwidth -= 2 * LINE_MARGIN;
+			wrapwidth_ -= 2 * kLineMargin;
 	}
-}
-
-/**
- * Set the text style for future wrapping operations.
- */
-void WordWrap::set_style(const TextStyle & style)
-{
-	m_style = style;
 }
 
 /**
  * Set the wrap width (i.e. line width limit in pixels) for future wrapping operations.
  */
-void WordWrap::set_wrapwidth(uint32_t wrapwidth)
-{
-	m_wrapwidth = wrapwidth;
+void WordWrap::set_wrapwidth(uint32_t gwrapwidth) {
+	wrapwidth_ = gwrapwidth;
 }
 
 /**
  * Return the wrap width. This can be larger than the actual @ref width of the final
  * text.
  */
-uint32_t WordWrap::wrapwidth() const
-{
-	return m_wrapwidth;
+uint32_t WordWrap::wrapwidth() const {
+	return wrapwidth_;
 }
 
 /**
  * Perform the wrapping computations for the given text and fill in
  * the private data containing the wrapped results.
  */
-void WordWrap::wrap(const std::string & text)
-{
-	//static int count = 0;
-	//log("word_wrap_text(%u): %i\n", m_wrapwidth, ++count);
-
-	m_lines.clear();
+void WordWrap::wrap(const std::string& text) {
+	lines_.clear();
 
 	std::string::size_type line_start = 0;
+	uint32_t margin = quick_width(0x2003);  // Em space
 
 	while (line_start <= text.size()) {
 		std::string::size_type next_line_start;
 		std::string::size_type line_end;
 
-		compute_end_of_line(text, line_start, line_end, next_line_start);
+		compute_end_of_line(text, line_start, line_end, next_line_start, margin);
 
 		LineData ld;
 		ld.start = line_start;
 		ld.text = text.substr(line_start, line_end - line_start);
-		m_lines.push_back(ld);
+		lines_.push_back(ld);
 
 		line_start = next_line_start;
 	}
 }
 
-
 /**
  * Compute the position where the line that starts at \p line_start
  * ends.
  */
-void WordWrap::compute_end_of_line
-	(const std::string & text,
-	 std::string::size_type line_start,
-	 std::string::size_type & line_end,
-	 std::string::size_type & next_line_start)
-{
+void WordWrap::compute_end_of_line(const std::string& text,
+                                   std::string::size_type line_start,
+                                   std::string::size_type& line_end,
+                                   std::string::size_type& next_line_start,
+                                   uint32_t safety_margin) {
+	std::string::size_type minimum_chars = 1;  // So we won't get empty lines
+	assert(text.empty() || wrapwidth_ > safety_margin);
+
 	std::string::size_type orig_end = text.find('\n', line_start);
 	if (orig_end == std::string::npos)
 		orig_end = text.size();
 
-	if (m_wrapwidth == std::numeric_limits<uint32_t>::max() || orig_end - line_start <= 1) {
+	if (wrapwidth_ == std::numeric_limits<uint32_t>::max() ||
+	    orig_end - line_start <= minimum_chars) {
 		// Special fast path when wrapping is disabled or
-		// original text line contains at most one character
+		// original text line contains at most minimum_chars characters
 		line_end = orig_end;
 		next_line_start = orig_end + 1;
 		return;
 	}
 
 	// Optimism: perhaps the entire line fits?
-	if (m_style.calc_bare_width(text.substr(line_start, orig_end - line_start)) <= m_wrapwidth) {
+	if (uint32_t(text_width(text.substr(line_start, orig_end - line_start), fontsize_)) <=
+	    wrapwidth_ - safety_margin) {
 		line_end = orig_end;
 		next_line_start = orig_end + 1;
 		return;
@@ -145,7 +163,8 @@ void WordWrap::compute_end_of_line
 	while (end_upper - end_lower > 4) {
 		std::string::size_type mid = end_lower + (end_upper - end_lower + 1) / 2;
 
-		if (m_style.calc_bare_width(text.substr(line_start, mid - line_start)) <= m_wrapwidth) {
+		if (line_fits(i18n::make_ligatures(text.substr(line_start, mid - line_start).c_str()),
+		              safety_margin)) {
 			end_lower = mid;
 		} else {
 			end_upper = mid - 1;
@@ -162,12 +181,13 @@ void WordWrap::compute_end_of_line
 	for (;;) {
 		std::string::size_type nextspace = text.find(' ', space + 1);
 		if (nextspace > end_upper)
-			break; // we already know that this cannot possibly fit
+			break;  // we already know that this cannot possibly fit
 
 		// check whether the next word still fits
-		if (m_style.calc_bare_width(text.substr(line_start, nextspace - line_start)) > m_wrapwidth)
+		if (!line_fits(i18n::make_ligatures(text.substr(line_start, nextspace - line_start).c_str()),
+		               safety_margin)) {
 			break;
-
+		}
 		space = nextspace;
 	}
 
@@ -177,83 +197,117 @@ void WordWrap::compute_end_of_line
 		return;
 	}
 
-	// Nasty special case: the line starts with a single word that is too big to fit
-	// Continue the binary search until we narrowed down exactly how many characters fit
-	while (end_upper > end_lower) {
-		std::string::size_type mid = end_lower + (end_upper - end_lower + 1) / 2;
+	// The line didn't fit.
+	// We just do a linear search ahead until we hit the max.
+	const icu::UnicodeString unicode_word(text.substr(line_start, orig_end).c_str(), "UTF-8");
+	uint32_t line_width = 0;
+	int32_t end = -1;
+	icu::UnicodeString unicode_line;
 
-		if (m_style.calc_bare_width(text.substr(line_start, mid - line_start)) <= m_wrapwidth)
-			end_lower = mid;
-		else
-			end_upper = mid - 1;
+	while ((line_width < (wrapwidth_ - safety_margin)) && (end < unicode_word.length())) {
+		++end;
+		UChar c = unicode_word.charAt(end);
+		// Diacritics do not add to the line width
+		if (!i18n::is_diacritic(c)) {
+			// This only estimates the width
+			line_width += quick_width(c);
+		}
+		unicode_line += c;
 	}
 
-	next_line_start = line_end = end_lower;
+	// Now make sure that it really fits.
+	std::string::size_type test_cutoff = line_start + end * 2 / 3;
+	while ((end > 0) && (static_cast<uint32_t>(line_start + end) > test_cutoff)) {
+		if (uint32_t(text_width(text.substr(line_start, end), fontsize_)) >
+		    wrapwidth_ - safety_margin) {
+			--end;
+		} else {
+			break;
+		}
+	}
+
+	// Find last space
+	int32_t last_space = unicode_line.lastIndexOf(0x0020);  // space character
+	if ((last_space > 0) && (static_cast<uint32_t>(last_space) > minimum_chars)) {
+		end = last_space;
+	}
+
+	// Make sure that diacritics stay with their base letters, and that
+	// start/end line rules are being followed.
+	while ((end > 0) && (static_cast<uint32_t>(end) > minimum_chars) &&
+	       (i18n::cannot_start_line(unicode_line.charAt(end)) ||
+	        i18n::cannot_end_line(unicode_line.charAt(end - 1)))) {
+		--end;
+	}
+	assert(end > 0);
+
+	next_line_start = line_end =
+	   (i18n::icustring2string(unicode_word.tempSubString(0, end)).size() + line_start);
 }
 
+// Returns true if the text won't fit into the alotted width.
+bool WordWrap::line_fits(const std::string& text, uint32_t safety_margin) const {
+	// calc_width_for_wrapping is fast, but it will underestimate the width.
+	// So, we test again with text_width to make sure that the line really fits.
+	return quick_width(i18n::make_ligatures(text.c_str())) <= wrapwidth_ - safety_margin &&
+	       uint32_t(text_width(text, fontsize_)) <= wrapwidth_ - safety_margin;
+}
 
 /**
  * Compute the width (including border) of the word-wrapped text.
  *
  * \note This is rather inefficient right now.
  */
-uint32_t WordWrap::width() const
-{
-	uint32_t width = 0;
+uint32_t WordWrap::width() const {
+	uint32_t calculated_width = 0;
 
-	for (uint32_t line = 0; line < m_lines.size(); ++line) {
-		uint32_t linewidth = m_style.calc_bare_width(m_lines[line].text);
-		if (linewidth > width)
-			width = linewidth;
+	for (uint32_t line = 0; line < lines_.size(); ++line) {
+		uint32_t linewidth = text_width(lines_[line].text, fontsize_);
+		if (linewidth > calculated_width)
+			calculated_width = linewidth;
 	}
 
-	return width + 2 * LINE_MARGIN;
+	return calculated_width + 2 * kLineMargin;
 }
 
 /**
  * Compute the total height of the word-wrapped text.
  */
-uint32_t WordWrap::height() const
-{
-	uint32_t fontheight = m_style.font->height();
-	uint32_t lineskip = m_style.font->lineskip();
-
-	return fontheight + (m_lines.size() - 1) * lineskip;
+uint32_t WordWrap::height() const {
+	return text_height(fontsize_) * (lines_.size()) + 2 * kLineMargin;
 }
 
 /**
  * Given an offset @p caret into the original text, compute the @p line that it
  * appears in in the wrapped text, and also the @p pos within that line (as an offset).
  */
-void WordWrap::calc_wrapped_pos(uint32_t caret, uint32_t & line, uint32_t & pos) const
-{
-	assert(m_lines.size());
-	assert(m_lines[0].start == 0);
+void WordWrap::calc_wrapped_pos(uint32_t caret, uint32_t& line, uint32_t& pos) const {
+	assert(lines_.size());
+	assert(lines_[0].start == 0);
 
 	uint32_t min = 0;
-	uint32_t max = m_lines.size() - 1;
+	uint32_t max = lines_.size() - 1;
 
 	while (max > min) {
 		uint32_t mid = min + (max - min + 1) / 2;
 
-		if (caret >= m_lines[mid].start)
+		if (caret >= lines_[mid].start)
 			min = mid;
 		else
 			max = mid - 1;
 	}
 
-	assert(caret >= m_lines[min].start);
+	assert(caret >= lines_[min].start);
 
 	line = min;
-	pos = caret - m_lines[min].start;
+	pos = caret - lines_[min].start;
 }
 
 /**
  * Return the starting offset of line number @p line in the original text.
  */
-uint32_t WordWrap::line_offset(uint32_t line) const
-{
-	return m_lines[line].start;
+uint32_t WordWrap::line_offset(uint32_t line) const {
+	return lines_[line].start;
 }
 
 /**
@@ -261,33 +315,67 @@ uint32_t WordWrap::line_offset(uint32_t line) const
  *
  * \note This also draws the caret, if any.
  */
-void WordWrap::draw(RenderTarget & dst, Point where, Align align, uint32_t caret)
-{
-	uint32_t fontheight = m_style.font->height();
-	uint32_t lineskip = m_style.font->lineskip();
+void WordWrap::draw(RenderTarget& dst, Vector2i where, Align align, uint32_t caret) {
+	if (lines_.empty())
+		return;
+
 	uint32_t caretline, caretpos;
 
 	calc_wrapped_pos(caret, caretline, caretpos);
 
-	if ((align & Align_Vertical) != Align_Top) {
-		uint32_t h = height();
-
-		if ((align & Align_Vertical) == Align_VCenter)
-			where.y -= (h + 1) / 2;
-		else
-			where.y -= h;
-	}
-
 	++where.y;
-	for (uint32_t line = 0; line < m_lines.size(); ++line, where.y += lineskip) {
-		if (where.y >= dst.get_h() || int32_t(where.y + fontheight) <= 0)
+
+	Align alignment = mirror_alignment(align, g_fh->fontset()->is_rtl());
+
+	const int fontheight = text_height(fontsize_);
+	for (uint32_t line = 0; line < lines_.size(); ++line, where.y += fontheight) {
+		if (where.y >= dst.height() || (where.y + fontheight) <= 0)
 			continue;
 
-		g_fh->draw_text
-			(dst, m_style, where, m_lines[line].text, Align(align & Align_Horizontal),
-			 line == caretline ? caretpos : std::numeric_limits<uint32_t>::max());
+		Vector2i point(where.x, where.y);
+
+		if (alignment == UI::Align::kRight) {
+			point.x += wrapwidth_ - kLineMargin;
+		}
+
+		std::shared_ptr<const UI::RenderedText> rendered_text = UI::g_fh->render(
+		   as_editorfont(lines_[line].text, fontsize_ - UI::g_fh->fontset()->size_offset(), color_));
+		UI::correct_for_align(alignment, rendered_text->width(), &point);
+		rendered_text->draw(dst, point);
+
+		if (draw_caret_ && line == caretline) {
+			std::string line_to_caret = lines_[line].text.substr(0, caretpos);
+			// TODO(GunChleoc): Arabic: Fix cursor position for BIDI text.
+			int caret_x = text_width(line_to_caret, fontsize_);
+
+			const Image* caret_image = g_gr->images().get("images/ui_basic/caret.png");
+			Vector2i caretpt = Vector2i::zero();
+			caretpt.x = point.x + caret_x - caret_image->width() + kLineMargin;
+			caretpt.y = point.y + (fontheight - caret_image->height()) / 2;
+			dst.blit(caretpt, caret_image);
+		}
 	}
 }
 
+/**
+ * Get a width estimate for text wrapping.
+ */
+uint32_t WordWrap::quick_width(const UChar& c) const {
+	int result = 0;
+	TTF_GlyphMetrics(font_->get_ttf_font(), c, nullptr, nullptr, nullptr, nullptr, &result);
+	return result;
+}
 
-} // namespace UI
+uint32_t WordWrap::quick_width(const std::string& text) const {
+	int result = 0;
+	const icu::UnicodeString parseme(text.c_str(), "UTF-8");
+	for (int i = 0; i < parseme.length(); ++i) {
+		UChar c = parseme.charAt(i);
+		if (!i18n::is_diacritic(c)) {
+			result += quick_width(c);
+		}
+	}
+	return result;
+}
+
+}  // namespace UI

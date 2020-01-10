@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,27 +13,51 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef WARE_STATISTICS_MENU_H
-#define WARE_STATISTICS_MENU_H
+#ifndef WL_WUI_WARE_STATISTICS_MENU_H
+#define WL_WUI_WARE_STATISTICS_MENU_H
 
+#include <vector>
+
+#include "logic/widelands.h"
 #include "ui_basic/unique_window.h"
+#include "wui/plot_area.h"
 
-struct Interactive_Player;
-struct WUIPlot_Area;
+struct DifferentialPlotArea;
+class InteractivePlayer;
+struct WuiPlotArea;
+struct StatisticWaresDisplay;
+struct WuiPlotAreaSlider;
+namespace UI {
+struct Box;
+struct TabPanel;
+}  // namespace UI
 
-struct Ware_Statistics_Menu : public UI::UniqueWindow {
-	Ware_Statistics_Menu(Interactive_Player &, UI::UniqueWindow::Registry &);
+struct WareStatisticsMenu : public UI::UniqueWindow {
+public:
+	WareStatisticsMenu(InteractivePlayer&, UI::UniqueWindow::Registry&);
+	void set_time(int32_t);
+
+protected:
+	void layout() override;
 
 private:
-	Interactive_Player * m_parent;
-	WUIPlot_Area       * m_plot;
+	UI::Box* main_box_;
+	UI::TabPanel* tab_panel_;
+	StatisticWaresDisplay* display_;
+	WuiPlotAreaSlider* slider_;
 
-	void clicked_help();
-	void cb_changed_to(int32_t, bool);
+	WuiPlotArea* plot_production_;
+	WuiPlotArea* plot_consumption_;
+	WuiPlotArea* plot_stock_;
+	DifferentialPlotArea* plot_economy_;
+	std::vector<uint8_t> color_map_;  // Maps ware index to colors
+	std::vector<bool> active_colors_;
+
+	void cb_changed_to(Widelands::DescriptionIndex, bool);
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_WARE_STATISTICS_MENU_H

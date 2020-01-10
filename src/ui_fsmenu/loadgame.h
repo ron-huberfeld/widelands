@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2008, 2010-2011 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,66 +13,63 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_LOADGAME_H
-#define FULLSCREEN_MENU_LOADGAME_H
+#ifndef WL_UI_FSMENU_LOADGAME_H
+#define WL_UI_FSMENU_LOADGAME_H
 
-#include "base.h"
+#include "ui_fsmenu/base.h"
 
-#include "io/filesystem/filesystem.h"
-
+#include "logic/game.h"
+#include "logic/game_settings.h"
+#include "ui_basic/box.h"
 #include "ui_basic/button.h"
 #include "ui_basic/checkbox.h"
-#include "ui_basic/listselect.h"
-#include "ui_basic/multilinetextarea.h"
+#include "ui_basic/panel.h"
 #include "ui_basic/textarea.h"
-
-namespace Widelands {
-struct Editor_Game_Base;
-struct Game;
-struct Map;
-struct Map_Loader;
-};
-struct RenderTarget;
+#include "ui_fsmenu/load_map_or_game.h"
+#include "wui/load_or_save_game.h"
 
 /// Select a Saved Game in Fullscreen Mode. It's a modal fullscreen menu.
-struct Fullscreen_Menu_LoadGame : public Fullscreen_Menu_Base {
-	Fullscreen_Menu_LoadGame(Widelands::Game &);
+class FullscreenMenuLoadGame : public FullscreenMenuLoadMapOrGame {
+public:
+	FullscreenMenuLoadGame(Widelands::Game&, GameSettingsProvider* gsp, bool is_replay = false);
 
-	const std::string & filename() {return m_filename;}
+	/// The currently selected filename
+	const std::string& filename() const;
 
-	void clicked_ok    ();
-	void clicked_delete();
-	void map_selected  (uint32_t);
-	void double_clicked(uint32_t);
-	void fill_list     ();
+	bool handle_key(bool down, SDL_Keysym code) override;
+
+protected:
+	/// Sets the current selected filename and ends the modal screen with 'Ok' status.
+	void clicked_ok() override;
+
+	/// Update button status and game details
+	void entry_selected() override;
+
+	/// Fill load_or_save_'s table
+	void fill_table() override;
 
 private:
-	void no_selection();
+	void layout() override;
+	void toggle_filenames();
 
-	uint32_t    m_butw;
-	uint32_t    m_buth;
-	uint32_t    m_fs;
-	std::string m_fn;
+	UI::Box main_box_;
+	UI::Box info_box_;
+	UI::Textarea title_;
 
-	Widelands::Game &                               m_game;
-	UI::Callback_Button                         m_back;
-	UI::Callback_Button                         m_ok;
-	UI::Callback_Button                         m_delete;
-	UI::Listselect<const char *>                    m_list;
-	UI::Textarea                                    m_title;
-	UI::Textarea                                    m_label_mapname;
-	UI::Textarea                                    m_tamapname;
-	UI::Textarea                                    m_label_gametime;
-	UI::Textarea                                    m_tagametime;
-	std::string                                     m_filename;
+	LoadOrSaveGame load_or_save_;
 
-	filenameset_t                                   m_gamefiles;
+	// TODO(GunChleoc): Get rid of this hack once everything is 100% box layout
+	UI::Panel* button_spacer_;
+	std::string filename_;
 
+	bool is_replay_;
+
+	UI::Checkbox* show_filenames_;
+	bool showing_filenames_;
 };
 
-
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_LOADGAME_H

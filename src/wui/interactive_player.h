@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2003, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,29 +13,23 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef INTERACTIVE_PLAYER_H
-#define INTERACTIVE_PLAYER_H
+#ifndef WL_WUI_INTERACTIVE_PLAYER_H
+#define WL_WUI_INTERACTIVE_PLAYER_H
 
-#include "interactive_gamebase.h"
-
-#include "ui_basic/button.h"
-#include "ui_basic/textarea.h"
-
-#include "logic/message_id.h"
+#include <memory>
+#include <vector>
 
 #include <SDL_keyboard.h>
 
-#include <vector>
-
-namespace UI {
-struct Multiline_Textarea;
-struct Textarea;
-}
-
+#include "io/profile.h"
+#include "logic/message_id.h"
+#include "logic/note_map_options.h"
+#include "ui_basic/button.h"
+#include "wui/interactive_gamebase.h"
 
 /**
  * This is the interactive player. this one is
@@ -43,74 +37,77 @@ struct Textarea;
  * to the player and draws the user interface,
  * cares for input and so on.
  */
-struct Interactive_Player : public Interactive_GameBase
-{
-	Interactive_Player
-		(Widelands::Game &,
-		 Section         & global_s,
-		 Widelands::Player_Number,
-		 bool              scenario,
-		 bool              multiplayer);
+class InteractivePlayer : public InteractiveGameBase {
+public:
+	InteractivePlayer(Widelands::Game&,
+	                  Section& global_s,
+	                  Widelands::PlayerNumber,
+	                  bool multiplayer,
+	                  ChatProvider* chat_provider = nullptr);
 
-	~Interactive_Player();
+	bool can_see(Widelands::PlayerNumber) const override;
+	bool can_act(Widelands::PlayerNumber) const override;
+	Widelands::PlayerNumber player_number() const override;
+	void draw_map_view(MapView* given_map_view, RenderTarget* dst) override;
 
-	void start();
+	void node_action(const Widelands::NodeAndTriangle<>& node_and_triangle) override;
 
-	void toggle_chat        ();
+	bool handle_key(bool down, SDL_Keysym) override;
 
-	virtual bool can_see(Widelands::Player_Number) const;
-	virtual bool can_act(Widelands::Player_Number) const;
-	virtual Widelands::Player_Number player_number() const;
-
-	virtual void node_action();
-
-	bool handle_key(bool down, SDL_keysym);
-
-	Widelands::Player & player() const throw () {
-		return game().player(m_player_number);
+	const Widelands::Player& player() const {
+		return game().player(player_number_);
 	}
-	Widelands::Player * get_player() const throw () {
+	Widelands::Player* get_player() const override {
 		assert(&game());
-		return game().get_player(m_player_number);
+		return game().get_player(player_number_);
 	}
 
 	// for savegames
 	void set_player_number(uint32_t plrn);
 
 	// For load
-	virtual void cleanup_for_load();
-	void think();
-	void postload();
+	void cleanup_for_load() override;
+	void postload() override;
+	void think() override;
+	void draw(RenderTarget& dst) override;
 
-	void set_flag_to_connect(Widelands::Coords const location) {
-		m_flag_to_connect = location;
+	void set_flag_to_connect(const Widelands::Coords& location) {
+		flag_to_connect_ = location;
 	}
 
-	void popup_message(Widelands::Message_Id, Widelands::Message const &);
+	void popup_message(Widelands::MessageId, const Widelands::Message&);
 
 private:
-	void cmdSwitchPlayer(std::vector<std::string> const & args);
+	// For referencing the items in statisticsmenu_
+	enum class StatisticsMenuEntry { kGeneral, kWare, kBuildings, kStock, kSeafaring };
 
-	Widelands::Player_Number m_player_number;
-	bool                     m_auto_roadbuild_mode;
-	Widelands::Coords        m_flag_to_connect;
+	// Adds the statisticsmenu_ to the toolbar
+	void add_statistics_menu();
+	// Rebuilds the statisticsmenu_ according to current map settings
+	void rebuild_statistics_menu();
+	// Takes the appropriate action when an item in the statisticsmenu_ is selected
+	void statistics_menu_selected(StatisticsMenuEntry entry);
+	void rebuild_showhide_menu() override;
 
-	UI::Callback_Button m_toggle_chat;
-	UI::Callback_Button m_toggle_options_menu;
-	UI::Callback_Button m_toggle_statistics_menu;
-	UI::Callback_Button m_toggle_objectives;
-	UI::Callback_Button m_toggle_minimap;
-	UI::Callback_Button m_toggle_buildhelp;
-	UI::Callback_Button m_toggle_message_menu;
-	UI::Callback_Button m_toggle_help;
+	bool player_hears_field(const Widelands::Coords& coords) const override;
 
-	UI::UniqueWindow::Registry m_chat;
-	UI::UniqueWindow::Registry m_options;
-	UI::UniqueWindow::Registry m_statisticsmenu;
-	UI::UniqueWindow::Registry m_objectives;
-	UI::UniqueWindow::Registry m_encyclopedia;
-	UI::UniqueWindow::Registry m_message_menu;
+	void cmdSwitchPlayer(const std::vector<std::string>& args);
+
+	Widelands::PlayerNumber player_number_;
+	bool auto_roadbuild_mode_;
+	Widelands::Coords flag_to_connect_;
+
+	UI::Button* toggle_message_menu_;
+
+	// Statistics menu on the toolbar
+	UI::Dropdown<StatisticsMenuEntry> statisticsmenu_;
+	UI::UniqueWindow::Registry objectives_;
+	UI::UniqueWindow::Registry encyclopedia_;
+	UI::UniqueWindow::Registry message_menu_;
+
+	const Image* grid_marker_pic_;
+
+	std::unique_ptr<Notifications::Subscriber<NoteMapOptions>> map_options_subscriber_;
 };
 
-
-#endif
+#endif  // end of include guard: WL_WUI_INTERACTIVE_PLAYER_H

@@ -1,6 +1,0 @@
-# TODO: this is currently not shown in warehouses as it is not used.
-help=_Cloth is needed for barbarian ships. It is produced out of thatch reed.
-
-[idle]
-pics=idle.png
-hotspot=6 9

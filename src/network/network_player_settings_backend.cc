@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2011 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,141 +13,75 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "network_player_settings_backend.h"
+#include "network/network_player_settings_backend.h"
 
-#include "gamesettings.h"
-#include "i18n.h"
-#include "log.h"
-#include "logic/player.h"
-#include "logic/tribe.h"
-#include "profile/profile.h"
+#include "ai/computer_player.h"
 
-
-/// Toggle through the types
-void NetworkPlayerSettingsBackend::toggle_type(uint8_t id) {
-	if (id >= s->settings().players.size())
+void NetworkPlayerSettingsBackend::set_player_state(PlayerSlot id, PlayerSettings::State state) {
+	if (id >= s->settings().players.size()) {
 		return;
-
-	assert(s->settings().usernum == 0);
-
-	s->nextPlayerState(id);
+	}
+	s->set_player_state(id, state);
 }
 
-/// Toggle through the tribes + handle shared in players
-void NetworkPlayerSettingsBackend::toggle_tribe(uint8_t id) {
-	GameSettings const & settings = s->settings();
-
-	if (id >= settings.players.size())
+void NetworkPlayerSettingsBackend::set_player_ai(PlayerSlot id,
+                                                 const std::string& name,
+                                                 bool random_ai) {
+	if (id >= s->settings().players.size()) {
 		return;
-
-	if (settings.players.at(id).state != PlayerSettings::stateShared) {
-		std::string const & currenttribe = settings.players.at(id).tribe;
-		std::string nexttribe = settings.tribes.at(0).name;
-
-		for (uint32_t i = 0; i < settings.tribes.size() - 1; ++i)
-			if (settings.tribes[i].name == currenttribe) {
-				nexttribe = settings.tribes.at(i + 1).name;
-				break;
-			}
-		s->setPlayerTribe(id, nexttribe);
+	}
+	if (random_ai) {
+		const ComputerPlayer::ImplementationVector& impls = ComputerPlayer::get_implementations();
+		ComputerPlayer::ImplementationVector::const_iterator it = impls.begin();
+		if (impls.size() > 1) {
+			do {
+				size_t random = (std::rand() % impls.size());  // Choose a random AI
+				it = impls.begin() + random;
+			} while ((*it)->type == ComputerPlayer::Implementation::Type::kEmpty);
+		}
+		s->set_player_ai(id, (*it)->name, random_ai);
 	} else {
-		// This button is temporarily used to select the player that uses this starting position
-		uint8_t sharedplr = settings.players.at(id).shared_in;
-		for (; sharedplr < settings.players.size(); ++sharedplr) {
-			if
-				(settings.players.at(sharedplr).state != PlayerSettings::stateClosed
-				 &&
-				 settings.players.at(sharedplr).state != PlayerSettings::stateShared)
-				break;
-		}
-		if (sharedplr < settings.players.size()) {
-			// We have already found the next player
-			s->setPlayerShared(id, sharedplr + 1);
-			return;
-		}
-		sharedplr = 0;
-		for (; sharedplr < settings.players.at(id).shared_in; ++sharedplr) {
-			if
-				(settings.players.at(sharedplr).state != PlayerSettings::stateClosed
-				 &&
-				 settings.players.at(sharedplr).state != PlayerSettings::stateShared)
-				break;
-		}
-		if (sharedplr < settings.players.at(id).shared_in) {
-			// We have found the next player
-			s->setPlayerShared(id, sharedplr + 1);
-			return;
-		} else {
-			// No fitting player found
-			return toggle_type(id);
-		}
+		s->set_player_ai(id, name, random_ai);
 	}
 }
 
-/// Toggle through the initializations
-void NetworkPlayerSettingsBackend::toggle_init(uint8_t id) {
-	GameSettings const & settings = s->settings();
-
-	if (id >= settings.players.size())
+void NetworkPlayerSettingsBackend::set_player_tribe(PlayerSlot id, const std::string& tribename) {
+	const GameSettings& settings = s->settings();
+	if (id >= settings.players.size() || tribename.empty()) {
 		return;
-
-	PlayerSettings const & player = settings.players[id];
-	container_iterate_const(std::vector<TribeBasicInfo>, settings.tribes, j)
-		if (j.current->name == player.tribe)
-			return
-				s->setPlayerInit
-					(id,
-					 (player.initialization_index + 1)
-					 %
-					 j.current->initializations.size());
-	assert(false);
-}
-
-/// Toggle through the teams
-void NetworkPlayerSettingsBackend::toggle_team(uint8_t id) {
-	const GameSettings & settings = s->settings();
-
-	if (id >= settings.players.size())
-		return;
-
-	Widelands::TeamNumber currentteam = settings.players.at(id).team;
-	Widelands::TeamNumber maxteam = settings.players.size() / 2;
-	Widelands::TeamNumber newteam;
-
-	if (currentteam >= maxteam)
-		newteam = 0;
-	else
-		newteam = currentteam + 1;
-
-	s->setPlayerTeam(id, newteam);
-}
-
-/// Check if all settings vor the player are still valid
-void NetworkPlayerSettingsBackend::refresh(uint8_t id) {
-	GameSettings const & settings = s->settings();
-
-	if (id >= settings.players.size())
-		return;
-
-	PlayerSettings const & player = settings.players[id];
-
-	if (player.state == PlayerSettings::stateShared) {
-		// ensure that the shared_in player is able to use this starting position
-		if (player.shared_in > settings.players.size())
-			toggle_tribe(id);
-		if
-			(settings.players.at(player.shared_in - 1).state == PlayerSettings::stateClosed
-			 ||
-			 settings.players.at(player.shared_in - 1).state == PlayerSettings::stateShared)
-			toggle_tribe(id);
-
-		if (shared_in_tribe[id] != settings.players.at(player.shared_in - 1).tribe) {
-			s->setPlayerTribe(id, settings.players.at(player.shared_in - 1).tribe);
-			shared_in_tribe[id] = settings.players.at(id).tribe;
-		}
 	}
+	if (settings.players.at(id).state != PlayerSettings::State::kShared) {
+		s->set_player_tribe(id, tribename, tribename == "random");
+	}
+}
+
+/// Set the shared in player for the given id
+void NetworkPlayerSettingsBackend::set_player_shared(PlayerSlot id,
+                                                     Widelands::PlayerNumber shared) {
+	const GameSettings& settings = s->settings();
+	if (id >= settings.players.size() || shared > settings.players.size())
+		return;
+	if (settings.players.at(id).state == PlayerSettings::State::kShared) {
+		s->set_player_shared(id, shared);
+	}
+}
+
+/// Sets the initialization for the player slot (Headquarters, Fortified Village etc.)
+void NetworkPlayerSettingsBackend::set_player_init(PlayerSlot id, uint8_t initialization_index) {
+	if (id >= s->settings().players.size()) {
+		return;
+	}
+	s->set_player_init(id, initialization_index);
+}
+
+/// Sets the team for the player slot
+void NetworkPlayerSettingsBackend::set_player_team(PlayerSlot id, Widelands::TeamNumber team) {
+	if (id >= s->settings().players.size()) {
+		return;
+	}
+	s->set_player_team(id, team);
 }

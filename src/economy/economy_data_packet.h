@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,35 +13,39 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef ECONOMY_DATA_PACKET_H
-#define ECONOMY_DATA_PACKET_H
+#ifndef WL_ECONOMY_ECONOMY_DATA_PACKET_H
+#define WL_ECONOMY_ECONOMY_DATA_PACKET_H
 
-#include "logic/widelands_fileread.h"
-#include "logic/widelands_filewrite.h"
+#include <cassert>
+
+class FileRead;
+class FileWrite;
 
 namespace Widelands {
 class Economy;
-struct Game;
-class Map_Map_Object_Loader;
-class Map_Map_Object_Saver;
+class Game;
+class MapObjectLoader;
+struct MapObjectSaver;
 
 class EconomyDataPacket {
-	public:
-		EconomyDataPacket(Economy * e) : m_eco(e) {}
+public:
+	explicit EconomyDataPacket(Economy* e, const MapObjectLoader* for_savegame_compatibility_only)
+	   : eco_(e), mol_(for_savegame_compatibility_only) {
+		assert(eco_);
+	}
 
-		void Read(FileRead &);
-		void Write(FileWrite &);
+	void read(FileRead&);
+	void write(FileWrite&);
 
-	private:
-		Economy * m_eco;
+private:
+	Economy* eco_;
+	// TODO(Nordfriese): Savegame compatibility
+	const MapObjectLoader* mol_;
 };
+}  // namespace Widelands
 
-}
-
-#endif
-
-
+#endif  // end of include guard: WL_ECONOMY_ECONOMY_DATA_PACKET_H

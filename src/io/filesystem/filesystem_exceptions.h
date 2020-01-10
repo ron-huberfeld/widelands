@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2007 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,12 +13,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FILESYSTEM_EXCEPTIONS_H
-#define FILESYSTEM_EXCEPTIONS_H
+#ifndef WL_IO_FILESYSTEM_FILESYSTEM_EXCEPTIONS_H
+#define WL_IO_FILESYSTEM_FILESYSTEM_EXCEPTIONS_H
 
 #include <stdexcept>
 #include <string>
@@ -26,77 +26,54 @@
 /**
  * Generic problem when dealing with a file or directory
  */
-struct File_error : public std::runtime_error {
-	explicit File_error
-		(const std::string & thrower,
-		 const std::string & filename,
-		 const std::string & message = "problem with file/directory")
-	throw ()
-		:
-		std::runtime_error(thrower + ": " + message + ": " + filename),
-		m_thrower         (thrower),
-		m_filename        (filename),
-		m_message         (message)
-	{}
+class FileError : public std::runtime_error {
+public:
+	explicit FileError(const std::string& thrower,
+	                   const std::string& filename,
+	                   const std::string& message = "problem with file/directory")
 
-	virtual ~File_error() throw () {}
-
-	std::string m_thrower;
-	std::string m_filename;
-	std::string m_message;
+	   : std::runtime_error(thrower + ": " + message + ": " + filename) {
+	}
 };
 
 /**
  * A file/directory could not be found. Either it really does not exist or there
  * are problems with the path, e.g. loops or nonexistent path components
  */
-struct FileNotFound_error : public File_error {
-	explicit FileNotFound_error
-		(const std::string & thrower,
-		 const std::string & filename,
-		 const std::string & message = "could not find file or directory")
-	throw ()
-		: File_error(thrower, filename, message)
-	{}
+class FileNotFoundError : public FileError {
+public:
+	explicit FileNotFoundError(const std::string& thrower,
+	                           const std::string& filename,
+	                           const std::string& message = "could not find file or directory")
+
+	   : FileError(thrower, filename, message) {
+	}
 };
 
 /**
  * The file/directory is of an unexpected type. Reasons can be given via message
  */
-struct FileType_error : public File_error {
-	explicit FileType_error
-		(const std::string & thrower,
-		 const std::string & filename,
-		 const std::string & message = "file or directory has wrong type")
-	throw ()
-		: File_error(thrower, filename, message)
-	{}
+class FileTypeError : public FileError {
+public:
+	explicit FileTypeError(const std::string& thrower,
+	                       const std::string& filename,
+	                       const std::string& message = "file or directory has wrong type")
+
+	   : FileError(thrower, filename, message) {
+	}
 };
 
 /**
  * The operating system denied access to the file/directory in question
  */
-struct FileAccessDenied_error : public File_error {
-	explicit FileAccessDenied_error
-		(const std::string & thrower,
-		 const std::string & filename,
-		 const std::string & message = "access denied on file or directory")
-	throw ()
-		: File_error(thrower, filename, message)
-	{}
+class FileAccessDeniedError : public FileError {
+public:
+	explicit FileAccessDeniedError(const std::string& thrower,
+	                               const std::string& filename,
+	                               const std::string& message = "access denied on file or directory")
+
+	   : FileError(thrower, filename, message) {
+	}
 };
 
-/**
- * The directory cannot be created
- */
-
-struct DirectoryCannotCreate_error : public File_error {
-	explicit DirectoryCannotCreate_error
-		(std::string const & thrower,
-		 std::string const & dirname,
-		 std::string const & message = "cannot create directory")
-		throw ()
-		: File_error(thrower, dirname, message)
-	{}
-};
-#endif
+#endif  // end of include guard: WL_IO_FILESYSTEM_FILESYSTEM_EXCEPTIONS_H

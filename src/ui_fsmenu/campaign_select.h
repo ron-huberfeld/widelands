@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2008, 2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,89 +13,49 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_CAMPAIGN_SELECT_H
-#define FULLSCREEN_MENU_CAMPAIGN_SELECT_H
+#ifndef WL_UI_FSMENU_CAMPAIGN_SELECT_H
+#define WL_UI_FSMENU_CAMPAIGN_SELECT_H
 
-#include "base.h"
+#include <vector>
 
-#include "ui_basic/button.h"
-#include "ui_basic/listselect.h"
-#include "ui_basic/multilinetextarea.h"
+#include "ui_basic/table.h"
 #include "ui_basic/textarea.h"
+#include "ui_fsmenu/campaigndetails.h"
+#include "ui_fsmenu/campaigns.h"
+#include "ui_fsmenu/load_map_or_game.h"
 
 /*
- * Fullscreen Menu for all Campaigns
+ * Fullscreen Menu for selecting a campaign
  */
+class FullscreenMenuCampaignSelect : public FullscreenMenuLoadMapOrGame {
+public:
+	FullscreenMenuCampaignSelect(Campaigns* campvis);
 
-/*
- * UI 1 - Selection of Campaign
- *
- */
-struct Fullscreen_Menu_CampaignSelect : public Fullscreen_Menu_Base {
-	Fullscreen_Menu_CampaignSelect();
-	void clicked_back();
-	void clicked_ok();
-	void campaign_selected(uint32_t);
-	void double_clicked(uint32_t);
-	void fill_list();
-	int32_t get_campaign();
+	size_t get_campaign_index() const;
+
+protected:
+	void clicked_ok() override;
+	void entry_selected() override;
+	void fill_table() override;
 
 private:
-	uint32_t    m_butw;
-	uint32_t    m_buth;
-	uint32_t    m_fs;
-	std::string m_fn;
+	void layout() override;
 
-	UI::Textarea                                      title;
-	UI::Textarea                                      label_campname;
-	UI::Textarea                                      tacampname;
-	UI::Textarea                                      label_difficulty;
-	UI::Textarea                                      tadifficulty;
-	UI::Textarea                                      label_campdescr;
-	UI::Multiline_Textarea                            tacampdescr;
-	UI::Callback_Button                               b_ok, back;
-	UI::Listselect<const char *>                      m_list;
+	/// Updates buttons and text labels and returns whether a table entry is selected.
+	bool set_has_selection();
 
-	/// Variables used for exchange between the two Campaign UIs and
-	/// Game::run_campaign
-	int32_t                                           campaign;
-};
-/*
- * UI 2 - Selection of a map
- *
- */
-struct Fullscreen_Menu_CampaignMapSelect : public Fullscreen_Menu_Base {
-	Fullscreen_Menu_CampaignMapSelect();
-	void clicked_back();
-	void clicked_ok();
-	void map_selected(uint32_t);
-	void double_clicked(uint32_t);
-	void fill_list();
-	std::string get_map();
-	void set_campaign(uint32_t);
+	bool compare_difficulty(uint32_t, uint32_t);
 
-private:
-	uint32_t    m_butw;
-	uint32_t    m_buth;
-	uint32_t    m_fs;
-	std::string m_fn;
+	UI::Table<uintptr_t const> table_;
 
-	UI::Textarea                                         title;
-	UI::Textarea                                         label_mapname;
-	UI::Textarea                                         tamapname;
-	UI::Textarea                                         label_author;
-	UI::Textarea                                         taauthor;
-	UI::Textarea                                         label_mapdescr;
-	UI::Multiline_Textarea                               tamapdescr;
-	UI::Callback_Button                              b_ok, back;
-	UI::Listselect<std::string>                          m_list;
-	uint32_t                                             campaign;
-	std::string                                          campmapfile;
+	UI::Textarea title_;
+	CampaignDetails campaign_details_;
 
+	Campaigns* campaigns_;
 };
 
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_CAMPAIGN_SELECT_H

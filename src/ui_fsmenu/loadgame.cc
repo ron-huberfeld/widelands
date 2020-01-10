@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2011 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,199 +13,180 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "loadgame.h"
+#include "ui_fsmenu/loadgame.h"
 
-#include "logic/game.h"
-#include "game_io/game_loader.h"
-#include "game_io/game_preload_data_packet.h"
-#include "graphic/graphic.h"
-#include "i18n.h"
-#include "io/filesystem/layered_filesystem.h"
-#include "log.h"
-#include "ui_basic/messagebox.h"
+#include <memory>
 
-#include <cstdio>
+#include "base/i18n.h"
+#include "wlapplication_options.h"
+#include "wui/gamedetails.h"
 
-Fullscreen_Menu_LoadGame::Fullscreen_Menu_LoadGame(Widelands::Game & g) :
-	Fullscreen_Menu_Base("choosemapmenu.jpg"),
+FullscreenMenuLoadGame::FullscreenMenuLoadGame(Widelands::Game& g,
+                                               GameSettingsProvider* gsp,
+                                               bool is_replay)
+   : FullscreenMenuLoadMapOrGame(),
 
-// Values for alignment and size
-	m_butw (get_w() / 4),
-	m_buth (get_h() * 9 / 200),
-	m_fs   (fs_small()),
-	m_fn   (ui_fn()),
+     main_box_(this, 0, 0, UI::Box::Vertical),
+     info_box_(&main_box_, 0, 0, UI::Box::Horizontal),
 
-// "Data holder" for the savegame information
-	m_game(g),
+     // Main title
+     title_(&main_box_,
+            0,
+            0,
+            0,
+            0,
+            is_replay ? _("Choose a replay") : _("Choose a saved game"),
+            UI::Align::kCenter,
+            g_gr->styles().font_style(UI::FontStyle::kFsMenuTitle)),
 
-// Buttons
-	m_back
-		(this, "back",
-		 get_w() * 71 / 100, get_h() * 9 / 10, m_butw, m_buth,
-		 g_gr->get_picture(PicMod_UI, "pics/but0.png"),
-		 boost::bind(&Fullscreen_Menu_LoadGame::end_modal, boost::ref(*this), 0),
-		 _("Back"), std::string(), true, false),
-	m_ok
-		(this, "ok",
-		 get_w() * 71 / 100, get_h() * 15 / 20, m_butw, m_buth,
-		 g_gr->get_picture(PicMod_UI, "pics/but2.png"),
-		 boost::bind(&Fullscreen_Menu_LoadGame::clicked_ok, boost::ref(*this)),
-		 _("OK"), std::string(), false, false),
-	m_delete
-		(this, "delete",
-		 get_w() * 71 / 100, get_h() * 17 / 20, m_butw, m_buth,
-		 g_gr->get_picture(PicMod_UI, "pics/but0.png"),
-		 boost::bind
-			 (&Fullscreen_Menu_LoadGame::clicked_delete, boost::ref(*this)),
-		 _("Delete"), std::string(), false, false),
+     load_or_save_(&info_box_,
+                   g,
+                   is_replay ?
+                      LoadOrSaveGame::FileType::kReplay :
+                      (gsp->settings().multiplayer ? LoadOrSaveGame::FileType::kGameMultiPlayer :
+                                                     LoadOrSaveGame::FileType::kGameSinglePlayer),
+                   UI::PanelStyle::kFsMenu,
+                   true),
 
-// Replay list
-	m_list
-		(this, get_w() * 47 / 2500, get_h() * 3417 / 10000,
-		 get_w() * 711 / 1250, get_h() * 6083 / 10000),
+     is_replay_(is_replay),
+     showing_filenames_(false) {
 
-// Text areas
-	m_title
-		(this,
-		 get_w() / 2, get_h() * 3 / 20,
-		 _("Choose saved game!"), UI::Align_HCenter),
-	m_label_mapname
-		(this,
-		 get_w() * 7 / 10,  get_h() * 17 / 50,
-		 _("Map Name:"), UI::Align_Right),
-	m_tamapname(this, get_w() * 71 / 100, get_h() * 17 / 50),
-	m_label_gametime
-		(this,
-		 get_w() * 7 / 10,  get_h() * 3 / 8,
-		 _("Gametime:"), UI::Align_Right),
-	m_tagametime(this, get_w() * 71 / 100, get_h() * 3 / 8)
-{
-	m_back.set_font(font_small());
-	m_ok.set_font(font_small());
-	m_delete.set_font(font_small());
+	// Make sure that we have some space to work with.
+	main_box_.set_size(get_w(), get_w());
 
-	m_title         .set_font(m_fn, fs_big(), UI_FONT_CLR_FG);
-	m_label_mapname .set_font(m_fn, m_fs, UI_FONT_CLR_FG);
-	m_tamapname     .set_font(m_fn, m_fs, UI_FONT_CLR_FG);
-	m_label_gametime.set_font(m_fn, m_fs, UI_FONT_CLR_FG);
-	m_tagametime    .set_font(m_fn, m_fs, UI_FONT_CLR_FG);
-	m_list          .set_font(m_fn, m_fs);
-	m_list.selected.set(this, &Fullscreen_Menu_LoadGame::map_selected);
-	m_list.double_clicked.set(this, &Fullscreen_Menu_LoadGame::double_clicked);
-	fill_list();
-}
-
-
-void Fullscreen_Menu_LoadGame::clicked_ok()
-{
-	m_filename = m_list.get_selected();
-	end_modal(1);
-}
-
-void Fullscreen_Menu_LoadGame::clicked_delete()
-{
-	std::string fname = m_list.get_selected();
-	UI::WLMessageBox confirmationBox
-		(this,
-		 _("Delete file"),
-		 _("Do you really want to delete ") + fname + "?",
-		 UI::WLMessageBox::YESNO);
-	if (confirmationBox.run()) {
-		g_fs->Unlink(m_list.get_selected());
-		m_list.clear();
-		fill_list();
-		if (m_list.empty()) {
-			//  else fill_list() already selected the first entry
-			m_ok.set_enabled(false);
-			m_delete.set_enabled(false);
-		}
+	main_box_.add_space(padding_);
+	main_box_.add_inf_space();
+	main_box_.add(&title_, UI::Box::Resizing::kAlign, UI::Align::kCenter);
+	main_box_.add_inf_space();
+	if (is_replay_) {
+		show_filenames_ = new UI::Checkbox(&main_box_, Vector2i::zero(), _("Show Filenames"));
+		main_box_.add(show_filenames_, UI::Box::Resizing::kFullSize);
 	}
+	main_box_.add_inf_space();
+	main_box_.add(&info_box_, UI::Box::Resizing::kExpandBoth);
+	main_box_.add_space(padding_);
+
+	info_box_.add(load_or_save_.table_box(), UI::Box::Resizing::kFullSize);
+	info_box_.add_space(right_column_margin_);
+	info_box_.add(load_or_save_.game_details(), UI::Box::Resizing::kFullSize);
+
+	button_spacer_ = new UI::Panel(load_or_save_.game_details()->button_box(), 0, 0, 0, 0);
+	load_or_save_.game_details()->button_box()->add(button_spacer_);
+
+	layout();
+
+	ok_.set_enabled(false);
+	set_thinks(false);
+
+	if (is_replay_) {
+		back_.set_tooltip(_("Return to the main menu"));
+		ok_.set_tooltip(_("Load this replay"));
+	} else {
+		back_.set_tooltip(gsp->settings().multiplayer ? _("Return to the multiplayer game setup") :
+		                                                _("Return to the single player menu"));
+		ok_.set_tooltip(_("Load this game"));
+	}
+
+	back_.sigclicked.connect(boost::bind(&FullscreenMenuLoadGame::clicked_back, boost::ref(*this)));
+	ok_.sigclicked.connect(boost::bind(&FullscreenMenuLoadGame::clicked_ok, boost::ref(*this)));
+	load_or_save_.table().selected.connect(
+	   boost::bind(&FullscreenMenuLoadGame::entry_selected, this));
+	load_or_save_.table().double_clicked.connect(
+	   boost::bind(&FullscreenMenuLoadGame::clicked_ok, boost::ref(*this)));
+
+	if (is_replay_) {
+		show_filenames_->changed.connect(
+		   boost::bind(&FullscreenMenuLoadGame::toggle_filenames, boost::ref(*this)));
+		show_filenames_->set_state(get_config_bool("display_replay_filenames", true));
+	}
+
+	fill_table();
+	if (!load_or_save_.table().empty()) {
+		load_or_save_.table().select(0);
+	}
+
+	load_or_save_.table_.cancel.connect(
+	   boost::bind(&FullscreenMenuLoadGame::clicked_back, boost::ref(*this)));
 }
 
-/**
- * Update buttons and labels to reflect that no loadable game is selected.
- */
-void Fullscreen_Menu_LoadGame::no_selection()
-{
-	m_ok.set_enabled(false);
-	m_delete.set_enabled(false);
-
-	m_tamapname .set_text(std::string());
-	m_tagametime.set_text(std::string());
+void FullscreenMenuLoadGame::layout() {
+	FullscreenMenuLoadMapOrGame::layout();
+	main_box_.set_size(get_w() - 2 * tablex_, tabley_ + tableh_ + padding_);
+	main_box_.set_pos(Vector2i(tablex_, 0));
+	title_.set_font_scale(scale_factor());
+	load_or_save_.delete_button()->set_desired_size(butw_, buth_);
+	button_spacer_->set_desired_size(butw_, buth_ + 2 * padding_);
+	load_or_save_.table().set_desired_size(tablew_, tableh_);
+	load_or_save_.game_details()->set_max_size(
+	   main_box_.get_w() - tablew_ - right_column_margin_, tableh_);
 }
 
+void FullscreenMenuLoadGame::toggle_filenames() {
+	showing_filenames_ = show_filenames_->get_state();
+	set_config_bool("display_replay_filenames", showing_filenames_);
 
-void Fullscreen_Menu_LoadGame::map_selected(uint32_t selected)
-{
-	if (!m_list.has_selection()) {
-		no_selection();
+	// Remember selection
+	const std::set<uint32_t> selected = load_or_save_.table().selections();
+	// Fill table again
+	fill_table();
+
+	// Restore selection items
+	// TODO(GunChleoc): It would be nice to have a function to just change the entry texts
+	for (const uint32_t selectme : selected) {
+		load_or_save_.table().multiselect(selectme, true);
+	}
+	entry_selected();
+}
+
+void FullscreenMenuLoadGame::clicked_ok() {
+	if (load_or_save_.table().selections().size() != 1) {
 		return;
 	}
 
-	if (const char * const name = m_list.get_selected()) {
-		Widelands::Game_Preload_Data_Packet gpdp;
-
-		try {
-			Widelands::Game_Loader gl(name, m_game);
-			gl.preload_game(gpdp);
-		} catch (const _wexception & e) {
-			log("Save game '%s' must have changed from under us\nException: %s\n", name, e.what());
-			m_list.remove(selected);
-			return;
-		}
-
-		m_ok.set_enabled(true);
-		m_delete.set_enabled(true);
-		m_tamapname.set_text(gpdp.get_mapname());
-
-		char buf[200];
-		uint32_t gametime = gpdp.get_gametime();
-
-		int32_t hours = gametime / 3600000;
-		gametime -= hours * 3600000;
-		int32_t minutes = gametime / 60000;
-
-		sprintf(buf, "%02i:%02i", hours, minutes);
-		m_tagametime.set_text(buf);
-	} else {
-		no_selection();
+	std::unique_ptr<SavegameData> gamedata = load_or_save_.entry_selected();
+	if (gamedata && gamedata->errormessage.empty()) {
+		filename_ = gamedata->filename;
+		end_modal<FullscreenMenuBase::MenuTarget>(FullscreenMenuBase::MenuTarget::kOk);
 	}
 }
 
-/**
- * Listbox got double clicked
- */
-void Fullscreen_Menu_LoadGame::double_clicked(uint32_t) {
-	clicked_ok();
+void FullscreenMenuLoadGame::entry_selected() {
+	ok_.set_enabled(load_or_save_.table().selections().size() == 1);
+	load_or_save_.delete_button()->set_enabled(load_or_save_.has_selection());
+	if (load_or_save_.has_selection()) {
+		load_or_save_.entry_selected();
+	}
 }
 
-/**
- * Fill the file list
- */
-void Fullscreen_Menu_LoadGame::fill_list() {
-	//  Fill it with all files we find.
-	g_fs->FindFiles("save", "*", &m_gamefiles, 0);
+void FullscreenMenuLoadGame::fill_table() {
+	load_or_save_.set_show_filenames(showing_filenames_);
+	load_or_save_.fill_table();
+}
 
-	Widelands::Game_Preload_Data_Packet gpdp;
+const std::string& FullscreenMenuLoadGame::filename() const {
+	return filename_;
+}
 
-	const filenameset_t & gamefiles = m_gamefiles;
-	container_iterate_const(filenameset_t, gamefiles, i) {
-		char const * const name = i.current->c_str();
+bool FullscreenMenuLoadGame::handle_key(bool down, SDL_Keysym code) {
+	if (!down)
+		return false;
 
-		try {
-			Widelands::Game_Loader gl(name, m_game);
-			gl.preload_game(gpdp);
-
-			m_list.add(FileSystem::FS_FilenameWoExt(name).c_str(), name);
-		} catch (_wexception const & e) {
-			//  we simply skip illegal entries
+	switch (code.sym) {
+	case SDLK_KP_PERIOD:
+		if (code.mod & KMOD_NUM) {
+			break;
 		}
+		FALLS_THROUGH;
+	case SDLK_DELETE:
+		load_or_save_.clicked_delete();
+		return true;
+	default:
+		break;
 	}
 
-	if (m_list.size())
-		m_list.select(0);
+	return FullscreenMenuLoadMapOrGame::handle_key(down, code);
 }

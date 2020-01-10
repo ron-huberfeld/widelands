@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,20 +13,20 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_WINDOW_H
-#define UI_WINDOW_H
+#ifndef WL_UI_BASIC_WINDOW_H
+#define WL_UI_BASIC_WINDOW_H
 
-#include "panel.h"
+#include "ui_basic/panel.h"
 
 namespace UI {
 /**
  * Windows are cached by default.
  *
- * The graphics (see m_pic_*) are used in the following manner: (Example)
+ * The graphics (see pic__*) are used in the following manner: (Example)
  *
  * top:
  *  <--20leftmostpixel_of_top-->
@@ -50,71 +50,79 @@ namespace UI {
  * Minimize means, that the window is only the caption bar, nothing inside.
  * Another click on this bar resizes the window again
  */
-struct Window : public NamedPanel {
-	Window
-		(Panel      * parent,
-		 std::string const & name,
-		 int32_t      x,
-		 int32_t      y,
-		 uint32_t     w,
-		 uint32_t     h,
-		 char const * title);
+class Window : public NamedPanel {
+public:
+	/// Do not use richtext for 'title'.
+	/// Text conventions: Title Case for the 'title'
+	Window(Panel* parent,
+	       const std::string& name,
+	       int32_t x,
+	       int32_t y,
+	       uint32_t w,
+	       uint32_t h,
+	       const std::string& title);
 
-	void set_title(const std::string &);
-	std::string const & get_title() const throw () {return m_title;}
+	/// This will set the window title. Do not use richtext for 'text'.
+	void set_title(const std::string& text);
+	const std::string& get_title() const {
+		return title_;
+	}
 
-	void set_center_panel(Panel * panel);
+	void set_center_panel(Panel* panel);
 	void move_out_of_the_way();
-	virtual void move_inside_parent();
+	void move_inside_parent() override;
 	void center_to_parent();
 	void warp_mouse_to_fastclick_panel();
-	void set_fastclick_panel(Panel * p) {m_fastclick_panel = p;}
+	void set_fastclick_panel(Panel* p) {
+		fastclick_panel_ = p;
+	}
 
-	bool is_minimal() const throw () {return _is_minimal;}
-	void restore ();
-	void minimize();
-	bool is_snap_target() const {return true;}
+	bool is_minimal() const {
+		return is_minimal_;
+	}
+	virtual void restore();
+	virtual void minimize();
+	bool is_snap_target() const override {
+		return true;
+	}
 
 	// Drawing and event handlers
-	virtual void draw(RenderTarget &);
-	void draw_border(RenderTarget &);
+	void draw(RenderTarget&) override;
+	void draw_border(RenderTarget&) override;
 
-	void think();
+	void think() override;
 
-	bool handle_mousepress  (Uint8 btn, int32_t mx, int32_t my);
-	bool handle_mouserelease(Uint8 btn, int32_t mx, int32_t my);
-	bool handle_mousemove
-		(Uint8 state, int32_t mx, int32_t my, int32_t xdiff, int32_t ydiff);
+	bool handle_mousepress(uint8_t btn, int32_t mx, int32_t my) override;
+	bool handle_mouserelease(uint8_t btn, int32_t mx, int32_t my) override;
+	bool
+	handle_mousemove(uint8_t state, int32_t mx, int32_t my, int32_t xdiff, int32_t ydiff) override;
+	bool handle_mousewheel(uint32_t which, int32_t x, int32_t y) override;
+	bool handle_tooltip() override;
+	bool handle_key(bool down, SDL_Keysym code) override;
 
 protected:
-	virtual void layout();
-	virtual void update_desired_size();
+	void die() override;
+	void layout() override;
+	void update_desired_size() override;
 
 private:
-	void dock_left();
-	void undock_left();
-	void dock_right();
-	void undock_right();
-	void dock_bottom();
-	void undock_bottom();
-	bool _is_minimal;
-	uint32_t _oldw, _oldh;  // if it is, these are the old formats
-	bool _dragging, _docked_left, _docked_right, _docked_bottom;
-	int32_t _drag_start_win_x, _drag_start_win_y;
-	int32_t _drag_start_mouse_x, _drag_start_mouse_y;
+	bool is_minimal_;
+	uint32_t oldh_;  // if it is minimized, this is the old height
+	bool dragging_, docked_left_, docked_right_, docked_bottom_;
+	int32_t drag_start_win_x_, drag_start_win_y_;
+	int32_t drag_start_mouse_x_, drag_start_mouse_y_;
 
-	std::string m_title;
+	std::string title_;
 
-	PictureID m_pic_lborder;
-	PictureID m_pic_rborder;
-	PictureID m_pic_top;
-	PictureID m_pic_bottom;
-	PictureID m_pic_background;
+	const Image* pic_lborder_;
+	const Image* pic_rborder_;
+	const Image* pic_top_;
+	const Image* pic_bottom_;
+	const Image* pic_background_;
 
-	Panel * m_center_panel;
-	Panel * m_fastclick_panel;
+	Panel* center_panel_;
+	Panel* fastclick_panel_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_WINDOW_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,13 +13,13 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "game_chat_menu.h"
+#include "wui/game_chat_menu.h"
 
-#include "i18n.h"
+#include "base/i18n.h"
 
 /*
 ==============================================================================
@@ -29,33 +29,59 @@ GameChatMenu IMPLEMENTATION
 ==============================================================================
 */
 
-GameChatMenu::GameChatMenu
-	(UI::Panel                  * parent,
-	 UI::UniqueWindow::Registry & registry,
-	 ChatProvider               & chat)
-:
-UI::UniqueWindow(parent, "chat", &registry, 440, 235, _("Chat Menu")),
-m_chat(this, 5, 5, get_inner_w() - 10, get_inner_h() - 10, chat)
-{
-	if (get_usedefaultpos())
+GameChatMenu::GameChatMenu(UI::Panel* parent,
+                           UI::UniqueWindow::Registry& registry,
+                           ChatProvider& chat,
+                           const std::string& title)
+   : UI::UniqueWindow(parent, "chat", &registry, 440, 235, title),
+     chat_(this, 5, 5, get_inner_w() - 10, get_inner_h() - 10, chat, UI::PanelStyle::kWui),
+     close_on_send_(false) {
+	if (get_usedefaultpos()) {
 		center_to_parent();
+	}
+	set_can_focus(true);
 
-	m_close_on_send = false;
+	chat_.sent.connect(boost::bind(&GameChatMenu::acknowledge, this));
+	chat_.aborted.connect(boost::bind(&GameChatMenu::acknowledge, this));
 
-	m_chat.sent.set(this, &GameChatMenu::acknowledge);
-	m_chat.aborted.set(this, &GameChatMenu::acknowledge);
+	enter_chat_message(close_on_send_);
 }
 
-
-void GameChatMenu::enter_chat_message(bool close_on_send)
-{
-	m_chat.focusEdit();
-	m_close_on_send = close_on_send;
+GameChatMenu* GameChatMenu::create_chat_console(UI::Panel* parent,
+                                                UI::UniqueWindow::Registry& registry,
+                                                ChatProvider& chat) {
+	return new GameChatMenu(parent, registry, chat, _("Chat"));
 }
 
+#ifndef NDEBUG  //  only in debug builds
+GameChatMenu* GameChatMenu::create_script_console(UI::Panel* parent,
+                                                  UI::UniqueWindow::Registry& registry,
+                                                  ChatProvider& chat) {
+	return new GameChatMenu(parent, registry, chat, _("Script Console"));
+}
+#endif
 
-void GameChatMenu::acknowledge()
-{
-	if (m_close_on_send)
+bool GameChatMenu::enter_chat_message(bool close_on_send) {
+	if (is_minimal()) {
+		return false;
+	}
+	chat_.focus_edit();
+	close_on_send_ = close_on_send;
+	return true;
+}
+
+void GameChatMenu::restore() {
+	Window::restore();
+	chat_.focus_edit();
+}
+
+void GameChatMenu::minimize() {
+	Window::minimize();
+	chat_.unfocus_edit();
+}
+
+void GameChatMenu::acknowledge() {
+	if (close_on_send_) {
 		die();
+	}
 }

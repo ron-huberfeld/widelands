@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,19 +13,16 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef MESSAGE_ID_H
-#define MESSAGE_ID_H
+#ifndef WL_LOGIC_MESSAGE_ID_H
+#define WL_LOGIC_MESSAGE_ID_H
 
 #include <stdint.h>
-#ifdef _MSC_VER
-#ifndef __attribute__
-#define __attribute__(x)
-#endif
-#endif
+
+#include "base/macros.h"
 
 namespace Widelands {
 
@@ -38,37 +35,55 @@ namespace Widelands {
 ///
 /// Because of this renumbering, the code that saves a message must translate
 /// the id that it has to the sequence number in the savegame of that message.
-/// Map_Message_Saver does that.
-struct Message_Id {
-	Message_Id() : id(0) {}
-	explicit Message_Id(uint32_t const _id) : id(_id) {}
+/// MapMessageSaver does that.
+struct MessageId {
+	MessageId() : id(0) {
+	}
+	explicit MessageId(uint32_t const init_id) : id(init_id) {
+	}
 
 	/// Constant value for no message.
-	static Message_Id Null() {Message_Id result; result.id = 0; return result;}
+	static MessageId null() {
+		MessageId result;
+		result.id = 0;
+		return result;
+	}
 
-	bool operator== (Message_Id const other) const {return id == other.id;}
-	bool operator!= (Message_Id const other) const {return id != other.id;}
-	bool operator<  (Message_Id const other) const {return id <  other.id;}
-	operator bool     () const {return *this != Null();}
-	uint32_t value() const {return id;}
+	bool operator==(const MessageId& other) const {
+		return id == other.id;
+	}
+	bool operator!=(const MessageId& other) const {
+		return id != other.id;
+	}
+	bool operator<(const MessageId& other) const {
+		return id < other.id;
+	}
+	operator bool() const {
+		return *this != null();
+	}
+	uint32_t value() const {
+		return id;
+	}
 
 private:
 	//  This is needed to prevent operator bool from being applied when someone
-	//  tries to use a Message_Id where a int*_t is needed. It will try to use
+	//  tries to use a MessageId where an int*_t is needed. It will try to use
 	//  this operator instead and fail because it is private. As an extra line
 	//  of defense, it is marked as deprectated. In any case, the linking will
 	//  fail because the function body is missing.
-	operator int8_t   () const __attribute__((deprecated));
-	operator int16_t  () const __attribute__((deprecated));
-	operator int32_t  () const __attribute__((deprecated));
-	operator int64_t  () const __attribute__((deprecated));
+	operator int8_t() const __attribute__((deprecated));
+	operator int16_t() const __attribute__((deprecated));
+	operator int32_t() const __attribute__((deprecated));
+	operator int64_t() const __attribute__((deprecated));
 
-	friend struct Map_Message_Saver;
+	friend struct MapMessageSaver;
 	friend struct MessageQueue;
-	Message_Id operator++() {++id; return *this;}
+	MessageId operator++() {
+		++id;
+		return *this;
+	}
 	uint32_t id;
 };
+}  // namespace Widelands
 
-}
-
-#endif
+#endif  // end of include guard: WL_LOGIC_MESSAGE_ID_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,24 +13,31 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "gamecontroller.h"
-#include "log.h"
+#include "scripting/lua_root.h"
+
+#include <memory>
+
+#include <boost/format.hpp>
+
 #include "logic/cmd_luacoroutine.h"
-#include "logic/findimmovable.h"
 #include "logic/game.h"
-#include "logic/immovable.h"
-#include "logic/tribe.h"
-
-#include "lua_game.h"
-#include "lua_editor.h"
-#include "lua_map.h"
-#include "coroutine_impl.h"
-
-#include "lua_root.h"
+#include "logic/game_controller.h"
+#include "logic/map_objects/findimmovable.h"
+#include "logic/map_objects/immovable.h"
+#include "logic/map_objects/tribes/tribe_descr.h"
+#include "logic/map_objects/tribes/tribes.h"
+#include "logic/map_objects/world/critter.h"
+#include "logic/map_objects/world/world.h"
+#include "scripting/globals.h"
+#include "scripting/lua_coroutine.h"
+#include "scripting/lua_editor.h"
+#include "scripting/lua_game.h"
+#include "scripting/lua_map.h"
+#include "scripting/lua_table.h"
 
 using namespace Widelands;
 
@@ -66,34 +73,31 @@ Game
 
 .. class:: Game
 
-	Child of: :class:`wl.bases.EditorGameBase`
+   Child of: :class:`wl.bases.EditorGameBase`
 
-	The root class to access the game internals. You can
-	construct as many instances of this class as you like, but
-	they all will access the one game currently running.
+   The root class to access the game internals. You can
+   construct as many instances of this class as you like, but
+   they all will access the one game currently running.
 */
-const char L_Game::className[] = "Game";
-const MethodType<L_Game> L_Game::Methods[] = {
-	METHOD(L_Game, launch_coroutine),
-	METHOD(L_Game, save),
-	{0, 0},
+const char LuaGame::className[] = "Game";
+const MethodType<LuaGame> LuaGame::Methods[] = {
+   METHOD(LuaGame, launch_coroutine),
+   METHOD(LuaGame, save),
+   {nullptr, nullptr},
 };
-const PropertyType<L_Game> L_Game::Properties[] = {
-	PROP_RO(L_Game, time),
-	PROP_RW(L_Game, desired_speed),
-	PROP_RW(L_Game, allow_autosaving),
-	{0, 0, 0},
+const PropertyType<LuaGame> LuaGame::Properties[] = {
+   PROP_RO(LuaGame, real_speed),   PROP_RO(LuaGame, time), PROP_RW(LuaGame, desired_speed),
+   PROP_RW(LuaGame, allow_saving), PROP_RO(LuaGame, type), {nullptr, nullptr, nullptr},
 };
 
-L_Game::L_Game(lua_State * L) {
+LuaGame::LuaGame(lua_State* /* L */) {
 	// Nothing to do.
 }
 
-void L_Game::__persist(lua_State * L) {
+void LuaGame::__persist(lua_State* /* L */) {
 }
-void L_Game::__unpersist(lua_State * L) {
+void LuaGame::__unpersist(lua_State* /* L */) {
 }
-
 
 /*
  ==========================================================
@@ -102,51 +106,89 @@ void L_Game::__unpersist(lua_State * L) {
  */
 
 /* RST
-	.. attribute:: time
+   .. attribute:: real_speed
 
-	(RO) The absolute time elapsed since the game was started in milliseconds.
+      (RO) The speed that the current game is running at in ms.
+           For example, for game speed = 2x, this returns 2000.
 */
-int L_Game::get_time(lua_State * L) {
+int LuaGame::get_real_speed(lua_State* L) {
+	lua_pushinteger(L, get_game(L).game_controller()->real_speed());
+	return 1;
+}
+
+/* RST
+   .. attribute:: time
+
+   (RO) The absolute time elapsed since the game was started in milliseconds.
+*/
+int LuaGame::get_time(lua_State* L) {
 	lua_pushint32(L, get_game(L).get_gametime());
 	return 1;
 }
 
-
 /* RST
-	.. attribute:: desired_speed
+   .. attribute:: desired_speed
 
-	(RW) Sets the desired speed of the game in ms per real second, so a speed of
-	1000 means the game runs at 1x speed. Note that this will not work in
-	network games as expected.
+   (RW) Sets the desired speed of the game in ms per real second, so a speed of
+   2000 means the game runs at 2x speed. Note that this will not work in
+   network games as expected.
 */
 // UNTESTED
-int L_Game::set_desired_speed(lua_State * L) {
-	get_game(L).gameController()->setDesiredSpeed(luaL_checkuint32(L, -1));
+int LuaGame::set_desired_speed(lua_State* L) {
+	get_game(L).game_controller()->set_desired_speed(luaL_checkuint32(L, -1));
 	return 1;
 }
 // UNTESTED
-int L_Game::get_desired_speed(lua_State * L) {
-	lua_pushuint32(L, get_game(L).gameController()->desiredSpeed());
+int LuaGame::get_desired_speed(lua_State* L) {
+	lua_pushuint32(L, get_game(L).game_controller()->desired_speed());
 	return 1;
 }
 
 /* RST
-	.. attribute:: allow_autosaving
+   .. attribute:: allow_saving
 
-		(RW) Disable or enable auto-saving. When you show off UI features in a
-		tutorial or scenario, you have to disallow auto-saving because UI
-		elements can not be saved and therefore reloading a game saved in the
-		meantime would crash the game.
+      (RW) Disable or enable saving. When you show off UI features in a
+      tutorial or scenario, you have to disallow saving because UI
+      elements can not be saved and therefore reloading a game saved in the
+      meantime would crash the game.
 */
 // UNTESTED
-int L_Game::set_allow_autosaving(lua_State * L) {
-	get_game(L).save_handler().set_allow_autosaving
-		(luaL_checkboolean(L, -1));
+int LuaGame::set_allow_saving(lua_State* L) {
+	get_game(L).save_handler().set_allow_saving(luaL_checkboolean(L, -1));
 	return 0;
 }
 // UNTESTED
-int L_Game::get_allow_autosaving(lua_State * L) {
-	lua_pushboolean(L, get_game(L).save_handler().get_allow_autosaving());
+int LuaGame::get_allow_saving(lua_State* L) {
+	lua_pushboolean(L, get_game(L).save_handler().get_allow_saving());
+	return 1;
+}
+
+/* RST
+   .. attribute:: type
+
+      (RO) One string out of 'undefined', 'singleplayer', 'netclient', 'nethost', 'replay',
+      describing the type of game that is played.
+*/
+int LuaGame::get_type(lua_State* L) {
+	// enum class GameType : uint8_t { kUndefined = 0, kSingleplayer, kNetClient, kNetHost, kReplay
+	// };
+	switch (get_game(L).game_controller()->get_game_type()) {
+	case GameController::GameType::kSingleplayer:
+		lua_pushstring(L, "singleplayer");
+		break;
+	case GameController::GameType::kNetClient:
+		lua_pushstring(L, "netclient");
+		break;
+	case GameController::GameType::kNetHost:
+		lua_pushstring(L, "nethost");
+		break;
+	case GameController::GameType::kReplay:
+		lua_pushstring(L, "replay");
+		break;
+	default:
+		lua_pushstring(L, "undefined");
+		break;
+	}
 	return 1;
 }
 
@@ -156,70 +198,62 @@ int L_Game::get_allow_autosaving(lua_State * L) {
  ==========================================================
  */
 /* RST
-	.. method:: launch_coroutine(func[, when = now])
+   .. method:: launch_coroutine(func[, when = now])
 
-		Hands a Lua coroutine object over to widelands for execution. The object
-		must have been created via :func:`coroutine.create`. The coroutine is
-		expected to :func:`coroutine.yield` at regular intervals with the
-		absolute game time on which the function should be awakened again. You
-		should also have a look at :mod:`core.cr`.
+      Hands a Lua coroutine object over to widelands for execution. The object
+      must have been created via :func:`coroutine.create`. The coroutine is
+      expected to :func:`coroutine.yield` at regular intervals with the
+      absolute game time on which the function should be awakened again. You
+      should also have a look at :mod:`core.cr`.
 
-		:arg func: coroutine object to run
-		:type func: :class:`thread`
-		:arg when: absolute time when this coroutine should run
-		:type when: :class:`integer`
+      :arg func: coroutine object to run
+      :type func: :class:`thread`
+      :arg when: absolute time when this coroutine should run
+      :type when: :class:`integer`
 
-		:returns: :const:`nil`
+      :returns: :const:`nil`
 */
-int L_Game::launch_coroutine(lua_State * L) {
+int LuaGame::launch_coroutine(lua_State* L) {
 	int nargs = lua_gettop(L);
 	uint32_t runtime = get_game(L).get_gametime();
 	if (nargs < 2)
-		report_error(L, "Too little arguments!");
+		report_error(L, "Too few arguments!");
 	if (nargs == 3) {
 		runtime = luaL_checkuint32(L, 3);
 		lua_pop(L, 1);
 	}
 
-	LuaCoroutine * cr = new LuaCoroutine_Impl(luaL_checkthread(L, 2));
-	lua_pop(L, 2); // Remove coroutine and Game object from stack
+	std::unique_ptr<LuaCoroutine> cr(new LuaCoroutine(luaL_checkthread(L, 2)));
+	lua_pop(L, 2);  // Remove coroutine and Game object from stack
 
-	get_game(L).enqueue_command(new Widelands::Cmd_LuaCoroutine(runtime, cr));
+	get_game(L).enqueue_command(new Widelands::CmdLuaCoroutine(runtime, std::move(cr)));
 
 	return 0;
 }
 
 /* RST
-	.. method:: save(name)
+   .. method:: save(name)
 
-		Saves the game exactly as if the player had entered the save dialog and
-		entered name as an argument. If some error occurred while saving, this
-		will throw an Lua error. Note that this currently doesn't work when
-		called from inside a Coroutine.
+      Requests a savegame. Note that the actual save will be performed
+      later, and that you have no control over any error that may happen
+      by then currently.
 
-		:arg name: name of save game. If this game already exists, it will be
-			silently overwritten
-		:type name: :class:`string`
-		:returns: :const:`nil`
+      :arg name: name of save game, as if entered in the save dialog.
+         If this game already exists, it will be silently overwritten.
+         If empty, the autosave name will be used.
+      :type name: :class:`string`
+      :returns: :const:`nil`
 */
-int L_Game::save(lua_State * const L) {
-	Widelands::Game & game = get_game(L);
+int LuaGame::save(lua_State* L) {
+	const std::string filename = luaL_checkstring(L, -1);
+	get_game(L).save_handler().request_save(filename);
 
-	std::string const complete_filename =
-		game.save_handler().create_file_name
-			(SaveHandler::get_base_dir(), luaL_checkstring(L, -1));
-
-	lua_pop(L, 2); // Make stack empty before persistence starts.
-
-	if (g_fs->FileExists(complete_filename))
-		g_fs->Unlink(complete_filename);
-	std::string error;
-	if (!game.save_handler().save_game(game, complete_filename, &error))
-		return report_error(L, "save error: %s", error.c_str());
+	// DO NOT REMOVE THIS OUTPUT. It is used by the regression test suite to
+	// figure out which files to load after a save was requested in a test.
+	log("Script requests save to: %s\n", filename.c_str());
 
 	return 0;
 }
-
 
 /*
  ==========================================================
@@ -233,27 +267,27 @@ Editor
 
 .. class:: Editor
 
-	Child of: :class:`wl.bases.EditorGameBase`
+   Child of: :class:`wl.bases.EditorGameBase`
 
-	The Editor object; it is the correspondence of the :class:`wl.Game`
-	that is used in a Game.
+   The Editor object; it is the correspondence of the :class:`wl.Game`
+   that is used in a Game.
 */
 
-const char L_Editor::className[] = "Editor";
-const MethodType<L_Editor> L_Editor::Methods[] = {
-	{0, 0},
+const char LuaEditor::className[] = "Editor";
+const MethodType<LuaEditor> LuaEditor::Methods[] = {
+   {nullptr, nullptr},
 };
-const PropertyType<L_Editor> L_Editor::Properties[] = {
-	{0, 0, 0},
+const PropertyType<LuaEditor> LuaEditor::Properties[] = {
+   {nullptr, nullptr, nullptr},
 };
 
-L_Editor::L_Editor(lua_State * L) {
+LuaEditor::LuaEditor(lua_State* /* L */) {
 	// Nothing to do.
 }
 
-void L_Editor::__persist(lua_State * L) {
+void LuaEditor::__persist(lua_State* /* L */) {
 }
-void L_Editor::__unpersist(lua_State * L) {
+void LuaEditor::__unpersist(lua_State* /* L */) {
 }
 
 /*
@@ -274,24 +308,706 @@ void L_Editor::__unpersist(lua_State * L) {
  ==========================================================
  */
 
-const static struct luaL_reg wlroot [] = {
-	{0, 0}
+/* RST
+World
+-----
+
+.. class:: World
+
+   This offers access to the objects in the Widelands world and allows to add new objects.
+   On how to build the world and adding new objects to it, see
+   :ref:`toc_lua_world`.
+*/
+
+const char LuaWorld::className[] = "World";
+const MethodType<LuaWorld> LuaWorld::Methods[] = {
+   METHOD(LuaWorld, new_critter_type),
+   METHOD(LuaWorld, new_editor_critter_category),
+   METHOD(LuaWorld, new_editor_immovable_category),
+   METHOD(LuaWorld, new_editor_terrain_category),
+   METHOD(LuaWorld, new_immovable_type),
+   METHOD(LuaWorld, new_resource_type),
+   METHOD(LuaWorld, new_terrain_type),
+   {0, 0},
+};
+const PropertyType<LuaWorld> LuaWorld::Properties[] = {
+   PROP_RO(LuaWorld, immovable_descriptions),
+   PROP_RO(LuaWorld, terrain_descriptions),
+   {0, 0, 0},
 };
 
-void luaopen_wlroot(lua_State * L, bool in_editor) {
-	luaL_register(L, "wl", wlroot);
-	lua_pop(L, 1); // pop the table
-
-	if (in_editor) {
-		register_class<L_Editor>(L, "", true);
-		add_parent<L_Editor, LuaBases::L_EditorGameBase>(L);
-		lua_pop(L, 1); // Pop the meta table
-	} else {
-		register_class<L_Game>(L, "", true);
-		add_parent<L_Game, LuaBases::L_EditorGameBase>(L);
-		lua_pop(L, 1); // Pop the meta table
-	}
+LuaWorld::LuaWorld(lua_State* /* L */) {
+	// Nothing to do.
 }
 
+void LuaWorld::__persist(lua_State*) {
+	// Nothing to be done.
+}
+void LuaWorld::__unpersist(lua_State*) {
+	// Nothing to be done.
+}
+
+/*
+ ==========================================================
+ PROPERTIES
+ ==========================================================
+ */
+
+/*
+ ==========================================================
+ LUA METHODS
+ ==========================================================
+ */
+
+/* RST
+   .. attribute:: immovable_descriptions
+
+      Returns a list of all the immovables that are available in the world.
+
+      (RO) a list of :class:`LuaImmovableDescription` objects
+*/
+int LuaWorld::get_immovable_descriptions(lua_State* L) {
+	const World& world = get_egbase(L).world();
+	lua_newtable(L);
+	int index = 1;
+	for (DescriptionIndex i = 0; i < world.get_nr_immovables(); ++i) {
+		lua_pushint32(L, index++);
+		to_lua<LuaMaps::LuaImmovableDescription>(
+		   L, new LuaMaps::LuaImmovableDescription(world.get_immovable_descr(i)));
+		lua_settable(L, -3);
+	}
+	return 1;
+}
+
+/* RST
+   .. attribute:: terrain_descriptions
+
+      Returns a list of all the terrains that are available in the world.
+
+      (RO) a list of :class:`LuaTerrainDescription` objects
+*/
+int LuaWorld::get_terrain_descriptions(lua_State* L) {
+	const World& world = get_egbase(L).world();
+	lua_newtable(L);
+	int index = 1;
+	for (DescriptionIndex i = 0; i < world.terrains().size(); ++i) {
+		lua_pushint32(L, index++);
+		to_lua<LuaMaps::LuaTerrainDescription>(
+		   L, new LuaMaps::LuaTerrainDescription(&world.terrain_descr(i)));
+		lua_settable(L, -3);
+	}
+	return 1;
+}
+
+// Documented in data/world/resources/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_resource_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_world()->add_resource_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+
+	return 0;
+}
+
+// Documented in data/world/terrains/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_terrain_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_world()->add_terrain_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+
+	return 0;
+}
+
+// Documented in data/world/critters/badger/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_critter_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);
+		get_egbase(L).mutable_world()->add_critter_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+// Documented in data/world/immovables/bush1/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_immovable_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);
+		get_egbase(L).mutable_world()->add_immovable_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+// Documented in data/world/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_editor_terrain_category(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);
+		get_egbase(L).mutable_world()->add_editor_terrain_category(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+// Documented in data/world/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_editor_critter_category(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);
+		get_egbase(L).mutable_world()->add_editor_critter_category(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+// Documented in data/world/init.lua.
+// See also the World and Tribes section in the Widelands Scripting Reference on the website.
+int LuaWorld::new_editor_immovable_category(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+	try {
+		LuaTable table(L);
+		get_egbase(L).mutable_world()->add_editor_immovable_category(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/*
+ ==========================================================
+ C METHODS
+ ==========================================================
+ */
+
+/* RST
+Tribes
+------
+
+.. class:: Tribes
+
+   This offers access to the objects available for the tribes and allows to add
+   new objects. See :ref:`lua_tribes` for detailed documentation.
+*/
+
+const char LuaTribes::className[] = "Tribes";
+const MethodType<LuaTribes> LuaTribes::Methods[] = {
+   METHOD(LuaTribes, new_carrier_type),
+   METHOD(LuaTribes, new_ferry_type),
+   METHOD(LuaTribes, new_constructionsite_type),
+   METHOD(LuaTribes, new_dismantlesite_type),
+   METHOD(LuaTribes, new_immovable_type),
+   METHOD(LuaTribes, new_market_type),
+   METHOD(LuaTribes, new_militarysite_type),
+   METHOD(LuaTribes, new_productionsite_type),
+   METHOD(LuaTribes, new_ship_type),
+   METHOD(LuaTribes, new_soldier_type),
+   METHOD(LuaTribes, new_trainingsite_type),
+   METHOD(LuaTribes, new_tribe),
+   METHOD(LuaTribes, new_ware_type),
+   METHOD(LuaTribes, new_warehouse_type),
+   METHOD(LuaTribes, new_worker_type),
+   METHOD(LuaTribes, add_custom_building),
+   METHOD(LuaTribes, add_custom_worker),
+   {0, 0},
+};
+const PropertyType<LuaTribes> LuaTribes::Properties[] = {
+   {0, 0, 0},
 };
 
+LuaTribes::LuaTribes(lua_State* /* L */) {
+	// Nothing to do.
+}
+
+void LuaTribes::__persist(lua_State*) {
+	// Nothing to be done.
+}
+
+void LuaTribes::__unpersist(lua_State*) {
+	// Nothing to be done.
+}
+
+/*
+ ==========================================================
+ PROPERTIES
+ ==========================================================
+ */
+
+/*
+ ==========================================================
+ LUA METHODS
+ ==========================================================
+ */
+
+/* RST
+   .. method:: new_constructionsite_type{table}
+
+      Adds a new constructionsite building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_constructionsites` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_constructionsite_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_constructionsite_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_dismantlesite_type{table}
+
+      Adds a new disnamtlesite building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_dismantlesites` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_dismantlesite_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_dismantlesite_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_militarysite_type{table}
+
+      Adds a new militarysite building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_militarysites` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_militarysite_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_militarysite_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_productionsite_type{table}
+
+      Adds a new productionsite building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_productionsites` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_productionsite_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		EditorGameBase& egbase = get_egbase(L);
+		egbase.mutable_tribes()->add_productionsite_type(table, egbase.world());
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_trainingsite_type{table}
+
+      Adds a new trainingsite building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_trainingsites` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_trainingsite_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		EditorGameBase& egbase = get_egbase(L);
+		egbase.mutable_tribes()->add_trainingsite_type(table, egbase.world());
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_warehouse_type{table}
+
+      Adds a new warehouse building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_warehouses` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_warehouse_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_warehouse_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+// TODO(GunChleoc): add RST marker
+/*
+   .. method:: new_market_type{table}
+
+      Adds a new market building type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_buildings_markets` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_market_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_market_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_immovable_type{table}
+
+      Adds a new immovable type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_immovables` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_immovable_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_immovable_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_ship_type{table}
+
+      Adds a new ship type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_ships` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_ship_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_ship_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_ware_type{table}
+
+      Adds a new ware type. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_wares` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_ware_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_ware_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_carrier_type{table}
+
+      Adds a new carrier worker type. Takes a single argument, a table with
+      the descriptions. See the files in tribes/ for usage examples.
+
+      :returns: :const:`nil`
+*/
+int LuaTribes::new_carrier_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_carrier_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_ferry_type{table}
+
+      Adds a new ferry worker type. Takes a single argument, a table with
+      the descriptions. See the files in tribes/ for usage examples.
+
+      :returns: :const:`nil`
+*/
+int LuaTribes::new_ferry_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		EditorGameBase& egbase = get_egbase(L);
+		egbase.mutable_tribes()->add_ferry_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_soldier_type{table}
+
+      Adds a new soldier worker type. Takes a single argument, a table with
+      the descriptions. See the files in tribes/ for usage examples.
+
+      :returns: :const:`nil`
+*/
+int LuaTribes::new_soldier_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_soldier_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_worker_type{table}
+
+      Adds a new worker type. Takes a single argument, a table with
+      the descriptions. See the files in tribes/ for usage examples.
+
+      :returns: :const:`nil`
+*/
+int LuaTribes::new_worker_type(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_worker_type(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: new_tribe{table}
+
+      Adds a new tribe. Takes a single argument, a table with
+      the descriptions. See :ref:`lua_tribes_<tribename>.lua` for detailed
+      documentation.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::new_tribe(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		get_egbase(L).mutable_tribes()->add_tribe(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: add_custom_building{table}
+
+      Adds a custom building to a tribe, e.g. for use in a scenario.
+      The building must already be known to the tribes and should be defined in
+      the ``map:scripting/tribes/`` directory.
+
+      **Note:** This function *has* to be called from ``map:scripting/tribes/init.lua``.
+
+      The table has the following entries:
+
+      **tribename**
+         *Mandatory*. The name of the tribe that this building will be added to.
+
+      **buildingname**
+         *Mandatory*. The name of the building to be added to the tribe.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::add_custom_building(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		EditorGameBase& egbase = get_egbase(L);
+		egbase.mutable_tribes()->add_custom_building(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/* RST
+   .. method:: add_custom_worker{table}
+
+      Adds a worker building to a tribe, e.g. for use in a scenario.
+      The worker must already be known to the tribes and should be defined in
+      the ``map:scripting/tribes/`` directory.
+
+      **Note:** This function *has* to be called from ``map:scripting/tribes/init.lua``.
+
+      The table has the following entries:
+
+      **tribename**
+         *Mandatory*. The name of the tribe that this worker will be added to.
+
+      **workername**
+         *Mandatory*. The name of the worker to be added to the tribe.
+
+      :returns: :const:`0`
+*/
+int LuaTribes::add_custom_worker(lua_State* L) {
+	if (lua_gettop(L) != 2) {
+		report_error(L, "Takes only one argument.");
+	}
+
+	try {
+		LuaTable table(L);  // Will pop the table eventually.
+		EditorGameBase& egbase = get_egbase(L);
+		egbase.mutable_tribes()->add_custom_worker(table);
+	} catch (std::exception& e) {
+		report_error(L, "%s", e.what());
+	}
+	return 0;
+}
+
+/*
+ ==========================================================
+ C METHODS
+ ==========================================================
+ */
+
+const static struct luaL_Reg wlroot[] = {{nullptr, nullptr}};
+
+void luaopen_wlroot(lua_State* L, bool in_editor) {
+	lua_getglobal(L, "wl");       // S: wl
+	luaL_setfuncs(L, wlroot, 0);  // S: wl
+	lua_pop(L, 1);                // S:
+
+	if (in_editor) {
+		register_class<LuaEditor>(L, "", true);
+		add_parent<LuaEditor, LuaBases::LuaEditorGameBase>(L);
+		lua_pop(L, 1);  // Pop the meta table
+	} else {
+		register_class<LuaGame>(L, "", true);
+		add_parent<LuaGame, LuaBases::LuaEditorGameBase>(L);
+		lua_pop(L, 1);  // Pop the meta table
+	}
+	register_class<LuaWorld>(L, "", false);
+	register_class<LuaTribes>(L, "", false);
+}
+}  // namespace LuaRoot

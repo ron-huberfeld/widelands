@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008-2009 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,28 +13,44 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "songset.h"
+#include "sound/songset.h"
 
+#include <utility>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/regex.hpp>
+
+#include "base/log.h"
+#include "helper.h"
 #include "io/fileread.h"
 #include "io/filesystem/layered_filesystem.h"
-#include "sound_handler.h"
 
-#include "log.h"
-
-/// Prepare infrastructure for reading song files from disk
-Songset::Songset() : m_m(0), m_rwops(0) {}
+/// Prepare infrastructure for reading song files from disk and register the matching files
+Songset::Songset(const std::string& dir, const std::string& basename)
+   : m_(nullptr), rwops_(nullptr) {
+	assert(g_fs);
+	std::vector<std::string> files = g_fs->get_sequential_files(dir, basename, "ogg");
+	for (const std::string& filename : files) {
+		assert(!g_fs->is_directory(filename));
+		add_song(filename);
+	}
+}
 
 /// Close and delete all songs to avoid memory leaks.
-Songset::~Songset()
-{
-	m_songs.clear();
+Songset::~Songset() {
+	songs_.clear();
 
-	if (m_m)
-		Mix_FreeMusic(m_m);
+	if (m_)
+		Mix_FreeMusic(m_);
+
+	if (rwops_) {
+		SDL_FreeRW(rwops_);
+		fr_.close();
+	}
 }
 
 /** Append a song to the end of the songset
@@ -43,53 +59,61 @@ Songset::~Songset()
  * first song. If you do not want to disturb the (linear) playback order then
  * \ref register_song() all songs before you start playing
  */
-void Songset::add_song(std::string const & filename) {
-	m_songs.push_back(filename);
-	m_current_song = m_songs.begin();
+void Songset::add_song(const std::string& filename) {
+	songs_.push_back(filename);
+	current_song_ = 0;
 }
 
-/** Get a song from the songset. Depending on
- * \ref Sound_Handler::sound_random_order, the selection will either be random
- * or linear (after last song, will start again with first).
- * \return  a pointer to the chosen song; 0 if none was found, music is disabled
+/**
+ * Uses a 'random' number to select a song and return its audio data.
+ * \param random A random number for picking the song
+ * \return  a pointer to the chosen song; nullptr if none was found
  *          or an error occurred
  */
-Mix_Music * Songset::get_song()
-{
+Mix_Music* Songset::get_song(uint32_t random) {
 	std::string filename;
 
-	if (g_sound_handler.get_disable_music() || m_songs.empty())
-		return 0;
+	if (songs_.empty()) {
+		return nullptr;
+	}
 
-	if (g_sound_handler.m_random_order)
-		filename = m_songs.at(g_sound_handler.m_rng.rand() % m_songs.size());
+	if (songs_.size() > 1) {
+		// Exclude current_song from playing two times in a row
+		current_song_ += 1 + random % (songs_.size() - 1);
+		current_song_ = current_song_ % songs_.size();
+	}
+	filename = songs_.at(current_song_);
+
+	// First, close the previous song and remove it from memory
+	if (m_) {
+		Mix_FreeMusic(m_);
+		m_ = nullptr;
+	}
+
+	if (rwops_) {
+		SDL_FreeRW(rwops_);
+		rwops_ = nullptr;
+		fr_.close();
+	}
+
+	// Then open the new song
+	if (fr_.try_open(*g_fs, filename)) {
+		if (!(rwops_ = SDL_RWFromMem(fr_.data(0), fr_.get_size()))) {
+			fr_.close();  // fr_ should be Open iff rwops_ != 0
+			return nullptr;
+		}
+	} else
+		return nullptr;
+
+	if (rwops_)
+		m_ = Mix_LoadMUS_RW(rwops_, 0);
+
+	if (m_)
+		log("Songset: Loaded song \"%s\"\n", filename.c_str());
 	else {
-		if (m_current_song == m_songs.end())
-			m_current_song = m_songs.begin();
-
-		filename = *(m_current_song++);
+		log("Songset: Loading song \"%s\" failed!\n", filename.c_str());
+		log("Songset: %s\n", Mix_GetError());
 	}
 
-	//first, close the previous song and remove it from memory
-	if (m_m) {
-		Mix_FreeMusic(m_m);
-		m_fr.Close();
-	}
-
-	//then open the new song
-	if (m_fr.TryOpen(*g_fs, filename.c_str()))
-		m_rwops = SDL_RWFromMem(m_fr.Data(0), m_fr.GetSize());
-	else
-		return 0;
-
-	m_m = Mix_LoadMUS_RW(m_rwops);
-
-	if (m_m)
-		log("Sound_Handler: loaded song \"%s\"\n", filename.c_str());
-	else {
-		log("Sound_Handler: loading song \"%s\" failed!\n", filename.c_str());
-		log("Sound_Handler: %s\n", Mix_GetError());
-	}
-
-	return m_m;
+	return m_;
 }

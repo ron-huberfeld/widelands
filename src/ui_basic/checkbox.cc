@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,51 +13,84 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "checkbox.h"
+#include "ui_basic/checkbox.h"
 
+#include "graphic/font_handler.h"
 #include "graphic/graphic.h"
 #include "graphic/rendertarget.h"
+#include "graphic/text_layout.h"
 
-#include "compile_assert.h"
+constexpr int kPadding = 4;
+
+namespace {
+int text_width(int available_width, int pic_width) {
+	return available_width > (pic_width + kPadding) ? available_width - pic_width - kPadding : 0;
+}
+}  // namespace
 
 namespace UI {
 /**
  * Stateboxes start out enabled and unchecked.
- * If picid is non-zero, the given picture is used instead of the normal
+ * If pic is non-zero, the given picture is used instead of the normal
  * checkbox graphics.
-*/
-Statebox::Statebox
-	(Panel             * const parent,
-	 Point               const p,
-	 PictureID           const picid,
-	 std::string const &       tooltip_text)
-	:
-	Panel  (parent, p.x, p.y, STATEBOX_WIDTH, STATEBOX_HEIGHT, tooltip_text),
-	m_flags(Is_Enabled)
-{
-	if (picid != g_gr->get_no_picture()) {
-		uint32_t w, h;
-		g_gr->get_picture_size(picid, w, h);
+ */
+Statebox::Statebox(Panel* const parent,
+                   Vector2i const p,
+                   const Image* pic,
+                   const std::string& tooltip_text)
+   : Panel(parent, p.x, p.y, kStateboxSize, kStateboxSize, tooltip_text),
+     flags_(Is_Enabled),
+     pic_graphics_(pic),
+     rendered_text_(nullptr) {
+	uint16_t w = pic->width();
+	uint16_t h = pic->height();
+	set_desired_size(w, h);
+	set_size(w, h);
+	set_flags(Has_Custom_Picture, true);
+}
+
+Statebox::Statebox(Panel* const parent,
+                   Vector2i const p,
+                   const std::string& label_text,
+                   const std::string& tooltip_text,
+                   int width)
+   : Panel(parent, p.x, p.y, std::max(width, kStateboxSize), kStateboxSize, tooltip_text),
+     flags_(Is_Enabled),
+     pic_graphics_(g_gr->images().get("images/ui_basic/checkbox_light.png")),
+     rendered_text_(nullptr),
+     label_text_(label_text) {
+	set_flags(Has_Text, !label_text_.empty());
+	layout();
+}
+
+void Statebox::layout() {
+	// We only need to relayout if we have text
+	if (flags_ & Has_Text) {
+		int w = get_w();
+		int h = kStateboxSize;
+		int pic_width = kStateboxSize;
+		if (pic_graphics_) {
+			w = std::max(pic_graphics_->width(), w);
+			h = pic_graphics_->height();
+			pic_width = pic_graphics_->width();
+		}
+		rendered_text_ =
+		   label_text_.empty() ?
+		      nullptr :
+		      UI::g_fh->render(as_richtext_paragraph(label_text_, UI::FontStyle::kLabel),
+		                       text_width(get_w(), pic_width));
+		if (rendered_text_.get()) {
+			w = std::max(rendered_text_->width() + kPadding + pic_width, w);
+			h = std::max(rendered_text_->height(), h);
+		}
+		set_desired_size(w, h);
 		set_size(w, h);
-
-		set_flags(Has_Custom_Picture, true);
-		m_pic_graphics = picid;
-	} else
-		m_pic_graphics =
-			g_gr->get_picture(PicMod_UI, "pics/checkbox_light_new.png");
-
-	m_id = -1;
+	}
 }
-
-
-Statebox::~Statebox()
-{
-}
-
 
 /**
  * Set the enabled state of the checkbox. A disabled checkbox cannot be clicked
@@ -65,24 +98,18 @@ Statebox::~Statebox()
  *
  * Args: enabled  true if the checkbox should be enabled, false otherwise
  */
-void Statebox::set_enabled(bool const enabled)
-{
-	if (((m_flags & Is_Enabled) > 1) and enabled)
+void Statebox::set_enabled(bool const enabled) {
+	if (((flags_ & Is_Enabled) > 1) && enabled)
 		return;
 
 	set_flags(Is_Enabled, enabled);
 
-	if (not (m_flags & Has_Custom_Picture)) {
-		m_pic_graphics = g_gr->get_picture
-			(PicMod_UI,
-			 enabled ? "pics/checkbox_light_new.png" : "pics/checkbox.png");
-		set_flags
-			(Is_Highlighted, m_flags & Is_Highlighted and m_flags & Is_Enabled);
+	if (!(flags_ & Has_Custom_Picture)) {
+		pic_graphics_ = g_gr->images().get(enabled ? "images/ui_basic/checkbox_light.png" :
+		                                             "images/ui_basic/checkbox.png");
+		set_flags(Is_Highlighted, (flags_ & Is_Highlighted) && (flags_ & Is_Enabled));
 	}
-
-	update();
 }
-
 
 /**
  * Changes the state of the checkbox.
@@ -90,86 +117,82 @@ void Statebox::set_enabled(bool const enabled)
  * Args: on  true if the checkbox should be checked
  */
 void Statebox::set_state(bool const on) {
-	if (on xor ((m_flags & Is_Checked) > 1)) {
+	if (on ^ ((flags_ & Is_Checked) > 1)) {
 		set_flags(Is_Checked, on);
-		changed    .call        ();
-		changedto  .call      (on);
-		changedtoid.call(m_id, on);
-		update();
+		changed();
+		changedto(on);
 	}
 }
-
 
 /**
  * Redraw the entire checkbox
-*/
-void Statebox::draw(RenderTarget & dst)
-{
-	if (m_flags & Has_Custom_Picture) {
+ */
+void Statebox::draw(RenderTarget& dst) {
+	if (flags_ & Has_Custom_Picture) {
 		// center picture
-		uint32_t w, h;
-		g_gr->get_picture_size(m_pic_graphics, w, h);
+		const uint16_t w = pic_graphics_->width();
+		const uint16_t h = pic_graphics_->height();
 
-		dst.blit
-			(Point((get_inner_w() - w) / 2, (get_inner_h() - h) / 2),
-			 m_pic_graphics);
+		dst.blit(Vector2i((get_inner_w() - w) / 2, (get_inner_h() - h) / 2), pic_graphics_);
 
-		if (m_flags & Is_Checked)
-			dst.draw_rect
-				(Rect(Point(0, 0), get_w(), get_h()), RGBColor(229, 116,   2));
-		else if (m_flags & Is_Highlighted)
-			dst.draw_rect
-				(Rect(Point(0, 0), get_w(), get_h()), RGBColor(100, 100,  80));
+		if (flags_ & Is_Checked) {
+			dst.draw_rect(Recti(0, 0, get_w(), get_h()), RGBColor(229, 116, 2));
+		} else if (flags_ & Is_Highlighted) {
+			dst.draw_rect(Recti(0, 0, get_w(), get_h()), RGBColor(100, 100, 80));
+		}
 	} else {
-		compile_assert(0 <= STATEBOX_WIDTH);
-		compile_assert(0 <= STATEBOX_HEIGHT);
-		dst.blitrect
-			(Point(0, 0),
-			 m_pic_graphics,
-			 Rect
-			 	(Point(m_flags & Is_Checked ? STATEBOX_WIDTH : 0, 0),
-			 	 STATEBOX_WIDTH, STATEBOX_HEIGHT));
+		static_assert(0 <= kStateboxSize, "assert(0 <= STATEBOX_WIDTH) failed.");
+		static_assert(0 <= kStateboxSize, "assert(0 <= STATEBOX_HEIGHT) failed.");
+		Vector2i image_anchor = Vector2i::zero();
+		Vector2i text_anchor(kStateboxSize + kPadding, 0);
 
-		if (m_flags & Is_Highlighted)
-			dst.draw_rect
-				(Rect(Point(0, 0), get_w(), get_h()), RGBColor(100, 100,  80));
+		if (rendered_text_.get()) {
+			if (UI::g_fh->fontset()->is_rtl()) {
+				text_anchor.x = 0;
+				image_anchor.x = rendered_text_->width() + kPadding;
+				image_anchor.y = (get_h() - kStateboxSize) / 2;
+			}
+			rendered_text_->draw(dst, text_anchor);
+		}
+
+		dst.blitrect(image_anchor, pic_graphics_,
+		             Recti(Vector2i((flags_ & Is_Checked) ? kStateboxSize : 0, 0), kStateboxSize,
+		                   kStateboxSize));
+
+		if (flags_ & Is_Highlighted)
+			dst.draw_rect(
+			   Recti(image_anchor, kStateboxSize + 1, kStateboxSize + 1), RGBColor(100, 100, 80));
 	}
 }
-
 
 /**
  * Highlight the checkbox when the mouse moves into it
  */
 void Statebox::handle_mousein(bool const inside) {
-	set_flags(Is_Highlighted, inside);
-	update();
+	set_flags(Is_Highlighted, inside && (flags_ & Is_Enabled));
 }
-
 
 /**
  * Left-click: Toggle checkbox state
  */
-bool Statebox::handle_mousepress(const Uint8 btn, int32_t, int32_t) {
-	if (btn == SDL_BUTTON_LEFT and m_flags & Is_Enabled) {
-		clicked();
+bool Statebox::handle_mousepress(const uint8_t btn, int32_t, int32_t) {
+	if (btn == SDL_BUTTON_LEFT && (flags_ & Is_Enabled)) {
+		button_clicked();
 		return true;
-	} else
-		return false;
-}
-bool Statebox::handle_mouserelease(const Uint8 btn, int32_t, int32_t)
-{
-	return btn == SDL_BUTTON_LEFT;
+	}
+	return false;
 }
 
+bool Statebox::handle_mousemove(const uint8_t, int32_t, int32_t, int32_t, int32_t) {
+	return true;  // We handle this always by lighting up
+}
 
 /**
  * Toggle the checkbox state
  */
-void Checkbox::clicked()
-{
-	clickedto.call(!get_state());
+void Checkbox::button_clicked() {
+	clickedto(!get_state());
 	set_state(!get_state());
 	play_click();
 }
-
-}
+}  // namespace UI

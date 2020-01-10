@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006, 2008 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,53 +13,35 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_OBJECTIVE_MENU_H
-#define GAME_OBJECTIVE_MENU_H
+#ifndef WL_WUI_GAME_OBJECTIVES_MENU_H
+#define WL_WUI_GAME_OBJECTIVES_MENU_H
 
 #include "ui_basic/listselect.h"
 #include "ui_basic/multilinetextarea.h"
 #include "ui_basic/unique_window.h"
-#include "ui_basic/button.h"
-
-#include "interactive_player.h"
 
 namespace Widelands {
-struct Game;
-struct Objective;
+class Objective;
 }
-struct Interactive_Player;
+class InteractivePlayer;
 
 ///  Shows the not already fulfilled objectives.
-struct GameObjectivesMenu : public UI::UniqueWindow {
-	GameObjectivesMenu(Interactive_Player &, UI::UniqueWindow::Registry &);
-	void think();
-
-private:
-	Interactive_Player & iplayer() const;
-	void                 selected(uint32_t);
-
-	typedef UI::Listselect<Widelands::Objective &> list_type;
-	list_type              list;
-	UI::Multiline_Textarea objectivetext;
-	//UI::Callback_Button m_claim_victory, m_restart_mission;
+class GameObjectivesMenu : public UI::UniqueWindow {
 public:
-	bool victorious(bool const v = false) {
-		static bool m_victory = v;
-		if (v)
-			m_victory = v;
-		//m_claim_victory.set_enabled(m_victory);
-		return m_victory;
-	}
+	GameObjectivesMenu(UI::Panel* parent, UI::UniqueWindow::Registry&);
+	void think() override;
+
 private:
-	void claim_victory();
-	void restart_mission();
+	InteractivePlayer& iplayer() const;
+	void selected(uint32_t);
 
-	Interactive_Player & m_player;
-
+	using ListType = UI::Listselect<const Widelands::Objective&>;
+	ListType list;
+	UI::MultilineTextarea objectivetext;
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_GAME_OBJECTIVES_MENU_H

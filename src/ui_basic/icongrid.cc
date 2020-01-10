@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2003-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,132 +13,107 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "icongrid.h"
+#include "ui_basic/icongrid.h"
 
-#include "log.h"
-
-#include "button.h"
-#include "mouse_constants.h"
-
-#include "graphic/font_handler.h"
-#include "graphic/rendertarget.h"
-#include "constants.h"
+#include "ui_basic/button.h"
 
 namespace UI {
 
-struct IconGridButton : public Callback_Button {
-	IconGridButton
-		(Icon_Grid         & parent,
-		 std::string const & name,
-		 const int32_t x, const int32_t y, const uint32_t w, const uint32_t h,
-		 const PictureID background_pictute_id,
-		 const PictureID foreground_picture_id,
-		 void (Icon_Grid::*callback_function)(uint32_t),
-		 Icon_Grid & callback_argument_this,
-		 const uint32_t callback_argument_id,
-		 Textarea          & ta, std::string const & descr)
-		:
-		Callback_Button
-			(&parent, name, x, y, w, h, background_pictute_id,
-			 foreground_picture_id,
-			 boost::bind(callback_function, boost::ref(callback_argument_this), callback_argument_id),
-			 "", true, true),
-			 m_icongrid(parent), m_ta(ta), m_descr(descr),
-			 _callback_argument_id(callback_argument_id)
-		{}
+struct IconGridButton : public Button {
+	IconGridButton(IconGrid& parent,
+	               const std::string& name,
+	               int32_t x,
+	               int32_t y,
+	               uint32_t w,
+	               uint32_t h,
+	               const Image* foreground_picture_id,
+	               uint32_t callback_argument_id,
+	               const std::string& tooltip_text)
+	   : Button(&parent,
+	            name,
+	            x,
+	            y,
+	            w,
+	            h,
+	            UI::ButtonStyle::kWuiBuildingStats,
+	            foreground_picture_id,
+	            tooltip_text,
+	            UI::Button::VisualState::kFlat),
+	     icongrid_(parent),
+	     callback_argument_id_(callback_argument_id) {
+	}
 
 private:
-	Icon_Grid & m_icongrid;
-	Textarea  & m_ta;
-	std::string m_descr;
-	const uint32_t _callback_argument_id;
+	IconGrid& icongrid_;
+	const uint32_t callback_argument_id_;
 
-	void handle_mousein(bool const inside) {
+	void handle_mousein(bool inside) override {
 		if (inside) {
-			m_icongrid.mousein.call(_callback_argument_id);
-			m_ta.set_text(m_descr);
+			icongrid_.mousein(callback_argument_id_);
 		} else {
-			m_icongrid.mouseout.call(_callback_argument_id);
-			m_ta.set_text("");
+			icongrid_.mouseout(callback_argument_id_);
 		}
-		Callback_Button::handle_mousein(inside);
+		Button::handle_mousein(inside);
 	}
 };
 
 /**
  * Initialize the grid
-*/
-Icon_Grid::Icon_Grid
-	(Panel  * const parent,
-	 int32_t const x, int32_t const y, int32_t const cellw, int32_t const cellh,
-	 int32_t  const cols)
-	:
-	Panel            (parent, x, y, 0, 0),
-	m_columns        (cols),
-	m_cell_width     (cellw),
-	m_cell_height    (cellh),
-	m_ta         (this, 0, 0, 0, g_fh->get_fontheight(UI_FONT_SMALL) + 2)
-{}
-
+ */
+IconGrid::IconGrid(
+   Panel* const parent, int32_t x, int32_t y, int32_t cellw, int32_t cellh, int32_t cols)
+   : Panel(parent, x, y, 0, 0), columns_(cols), cell_width_(cellw), cell_height_(cellh) {
+}
 
 /**
  * Add a new icon to the list and resize appropriately.
  * Returns the index of the newly added icon.
-*/
-int32_t Icon_Grid::add
-	(std::string const & name, PictureID const picid,
-	 void * const data, std::string const & descr)
-{
+ */
+int32_t IconGrid::add(const std::string& name,
+                      const Image* pic,
+                      void* data,
+                      const std::string& tooltip_text) {
 	Item it;
 
 	it.data = data;
 
-	m_items.push_back(it);
+	items_.push_back(it);
 
 	// resize
-	int32_t const rows = (m_items.size() + m_columns - 1) / m_columns;
+	const int32_t rows = (items_.size() + columns_ - 1) / columns_;
 
 	if (rows <= 1) {
-		set_desired_size(m_cell_width * m_columns, m_cell_height + m_ta.get_h());
-		m_ta.set_size(get_inner_w(), m_ta.get_h());
-		m_ta.set_pos(Point(0, m_cell_height));
+		set_desired_size(cell_width_ * columns_, cell_height_);
 	} else {
-		set_desired_size
-			(m_cell_width * m_columns, m_cell_height * rows + m_ta.get_h());
-		m_ta.set_size(get_inner_w(), m_ta.get_h());
-		m_ta.set_pos(Point(0, m_cell_height * rows));
+		set_desired_size(cell_width_ * columns_, cell_height_ * rows);
 	}
 
-	uint32_t idx = m_items.size() - 1;
-	uint32_t x = (idx % m_columns) * m_cell_width;
-	uint32_t y = (idx / m_columns) * m_cell_height;
+	uint32_t idx = items_.size() - 1;
+	uint32_t x = (idx % columns_) * cell_width_;
+	uint32_t y = (idx / columns_) * cell_height_;
 
-	new IconGridButton
-		(*this, name,
-		 x, y, m_cell_width, m_cell_height,
-		 g_gr->get_no_picture(), picid,
-		 &Icon_Grid::clicked_button, *this, idx, m_ta, descr);
+	UI::Button* btn =
+	   new IconGridButton(*this, name, x, y, cell_width_, cell_height_, pic, idx, tooltip_text);
+	btn->sigclicked.connect(boost::bind(&IconGrid::clicked_button, this, idx));
 
 	return idx;
 }
 
-void Icon_Grid::clicked_button(uint32_t idx) {
-	clicked.call(idx);
+void IconGrid::clicked_button(uint32_t idx) {
+	icon_clicked(idx);
 	play_click();
 }
 
 /**
  * Returns the user-defined data of the icon with the given index.
-*/
-void * Icon_Grid::get_data(int32_t const idx)
-{
-	assert(static_cast<uint32_t>(idx) < m_items.size());
+ */
+void* IconGrid::get_data(int32_t idx) {
+	assert(static_cast<uint32_t>(idx) < items_.size());
 
-	return m_items[idx].data;
+	return items_[idx].data;
 }
-
-}
+}  // namespace UI

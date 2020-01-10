@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2008 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,21 +13,23 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 // UI classes for real-time game debugging
 
-#ifndef GAME_DEBUG_UI_H
-#define GAME_DEBUG_UI_H
+#ifndef WL_WUI_GAME_DEBUG_UI_H
+#define WL_WUI_GAME_DEBUG_UI_H
 
 #include "logic/widelands_geometry.h"
 
-struct Interactive_Base;
-namespace Widelands {class Map_Object;}
+class InteractiveBase;
+namespace Widelands {
+class MapObject;
+}
 
 // Open debug window for the given coordinates
-void show_mapobject_debug(Interactive_Base & parent, Widelands::Map_Object &);
-void show_field_debug(Interactive_Base & parent, Widelands::Coords coords);
+void show_mapobject_debug(InteractiveBase& parent, Widelands::MapObject&);
+void show_field_debug(InteractiveBase& parent, const Widelands::Coords& coords);
 
-#endif
+#endif  // end of include guard: WL_WUI_GAME_DEBUG_UI_H

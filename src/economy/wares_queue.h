@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,87 +13,60 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef WARES_QUEUE_H
-#define WARES_QUEUE_H
+#ifndef WL_ECONOMY_WARES_QUEUE_H
+#define WL_ECONOMY_WARES_QUEUE_H
 
-// Needed for Ware_Index
-#include "logic/widelands.h"
-#include "logic/immovable.h"
+#include "economy/input_queue.h"
+#include "logic/map_objects/immovable.h"
 
 namespace Widelands {
 
-struct Economy;
-struct Editor_Game_Base;
-struct Game;
-struct Map_Map_Object_Loader;
-struct Map_Map_Object_Saver;
-struct Player;
-struct Request;
-struct WaresQueue;
+class Economy;
+class EditorGameBase;
+class Game;
+class MapObjectLoader;
+struct MapObjectSaver;
+class Player;
+class Request;
 class Worker;
 
 /**
  * This micro storage room can hold any number of items of a fixed ware.
- *
- * You must call update() after changing the queue's size or filled state using
- * one of the set_*() functions.
  */
-struct WaresQueue {
-	typedef void (callback_t)
-		(Game &, WaresQueue *, Ware_Index ware, void * data);
-
-	WaresQueue(PlayerImmovable &, Ware_Index, uint8_t size, uint8_t filled = 0);
+class WaresQueue : public InputQueue {
+public:
+	WaresQueue(PlayerImmovable&, DescriptionIndex, uint8_t size);
 
 #ifndef NDEBUG
-	~WaresQueue() {assert(not m_ware);}
+	~WaresQueue() override {
+		assert(index_ == INVALID_INDEX);
+	}
 #endif
 
-	Ware_Index get_ware() const {return m_ware;}
-	uint32_t get_size            () const throw () {return m_size;}
-	uint32_t get_filled          () const throw () {return m_filled;}
-	uint32_t get_consume_interval() const throw () {return m_consume_interval;}
+	Quantity get_filled() const override {
+		return filled_;
+	}
 
-	void cleanup();
-	void update();
+	void cleanup() override;
 
-	void set_callback(callback_t *, void * data);
+	void remove_from_economy(Economy&) override;
+	void add_to_economy(Economy&) override;
 
-	void remove_from_economy(Economy &);
-	void add_to_economy(Economy &);
+	void set_filled(Quantity) override;
 
-	void set_size            (uint32_t) throw ();
-	void set_filled          (uint32_t) throw ();
-	void set_consume_interval(uint32_t) throw ();
+protected:
+	void read_child(FileRead&, Game&, MapObjectLoader&) override;
+	void write_child(FileWrite&, Game&, MapObjectSaver&) override;
 
-	Player & owner() const throw () {return m_owner.owner();}
+	void entered(DescriptionIndex index, Worker* worker) override;
 
-	void Read (FileRead  &, Game &, Map_Map_Object_Loader &);
-	void Write(FileWrite &, Game &, Map_Map_Object_Saver  &);
-
-private:
-	static void request_callback
-		(Game &, Request &, Ware_Index, Worker *, PlayerImmovable &);
-
-	PlayerImmovable & m_owner;
-	Ware_Index        m_ware;    ///< ware ID
-	uint32_t m_size;             ///< nr of items that fit into the queue
-	uint32_t m_filled;           ///< nr of items that are currently in the queue
-
-	///< time in ms between consumption at full speed
-	uint32_t m_consume_interval;
-
-	Request         * m_request; ///< currently pending request
-
-	callback_t      * m_callback_fn;
-	void            * m_callback_data;
+	/// Number of items that are currently in the queue
+	Quantity filled_;
 };
+}  // namespace Widelands
 
-}
-
-#endif
-
-
+#endif  // end of include guard: WL_ECONOMY_WARES_QUEUE_H

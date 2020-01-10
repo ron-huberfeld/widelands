@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,20 +13,20 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GAME_SAVER_H
-#define GAME_SAVER_H
+#ifndef WL_GAME_IO_GAME_SAVER_H
+#define WL_GAME_IO_GAME_SAVER_H
 
-#include "wexception.h"
+#include "base/wexception.h"
 
-struct FileSystem;
+class FileSystem;
 
 namespace Widelands {
 
-struct Game;
+class Game;
 
 /**
  * This class writes a complete state
@@ -37,16 +37,15 @@ struct Game;
  * so little to save, that everything is done by this class
  */
 
-struct Game_Saver {
-	Game_Saver(FileSystem &, Game &);
+struct GameSaver {
+	GameSaver(FileSystem&, Game&);
 
 	void save();
 
 private:
-	FileSystem & m_fs;
-	Game       & m_game;
+	FileSystem& fs_;
+	Game& game_;
 };
+}  // namespace Widelands
 
-}
-
-#endif
+#endif  // end of include guard: WL_GAME_IO_GAME_SAVER_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006, 2008-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,55 +13,69 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_BASE_H
-#define FULLSCREEN_MENU_BASE_H
+#ifndef WL_UI_FSMENU_BASE_H
+#define WL_UI_FSMENU_BASE_H
 
-#include <boost/scoped_ptr.hpp>
-
-#include "ui_basic/panel.h"
 #include <string>
 
-namespace UI {
-struct Font;
-struct TextStyle;
-}
+#include "ui_basic/fullscreen_window.h"
+#include "ui_basic/panel.h"
 
 /**
  * This class is the base class for a fullscreen menu.
- * A fullscreen menu is a menu which takes the full screen; it has the size
- * MENU_XRES and MENU_YRES and is a modal UI Element
+ * A fullscreen menu is a menu which takes the full screen
+ * and it is a modal UI Element
  */
-struct Fullscreen_Menu_Base : public UI::Panel {
-	Fullscreen_Menu_Base(char const * bgpic);
-	~Fullscreen_Menu_Base();
-
-	virtual void draw(RenderTarget &);
-
+class FullscreenMenuBase : public UI::FullscreenWindow {
 public:
-	///\return the size for texts fitting to current resolution
-	uint32_t fs_small();
-	uint32_t fs_big();
+	enum class MenuTarget {
+		kBack = static_cast<int>(UI::Panel::Returncodes::kBack),
+		kOk = static_cast<int>(UI::Panel::Returncodes::kOk),
 
-	UI::TextStyle & ts_small();
-	UI::TextStyle & ts_big();
+		// Options
+		kApplyOptions,
 
-	UI::Font * font_small();
-	UI::Font * font_big();
+		// Main menu
+		kTutorial,
+		kSinglePlayer,
+		kMultiplayer,
+		kReplay,
+		kEditor,
+		kOptions,
+		kAbout,
+		kExit,
 
-private:
-	/**
-	 * Query the configured screen resolution.
-	 */
-	uint32_t gr_x();
-	uint32_t gr_y();
+		// Single player
+		kNewGame,
+		kCampaign,
+		kLoadGame,
 
-	struct Data;
-	boost::scoped_ptr<Data> d;
+		// Multiplayer
+		kMetaserver,
+		kLan,
+
+		// Launch game
+		kNormalGame,
+		kScenarioGame,
+		kMultiPlayerSavegame,
+		kHostgame,
+		kJoingame
+	};
+
+	/// A full screen main menu outside of the game/editor itself.
+	FullscreenMenuBase();
+	~FullscreenMenuBase() override;
+
+	/// Handle keypresses
+	bool handle_key(bool down, SDL_Keysym code) override;
+
+protected:
+	virtual void clicked_back();
+	virtual void clicked_ok();
 };
 
-
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_BASE_H

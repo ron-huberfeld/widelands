@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,32 +13,41 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef _PRODUCTIONSITEWINDOW_H_
-#define _PRODUCTIONSITEWINDOW_H_
+#ifndef WL_WUI_PRODUCTIONSITEWINDOW_H
+#define WL_WUI_PRODUCTIONSITEWINDOW_H
 
-#include "buildingwindow.h"
-#include "logic/productionsite.h"
+#include <memory>
+
+#include "logic/map_objects/tribes/productionsite.h"
 #include "ui_basic/table.h"
+#include "wui/buildingwindow.h"
 
-struct ProductionSite_Window : public Building_Window {
-	ProductionSite_Window
-		(Interactive_GameBase & parent,
-		 Widelands::ProductionSite &,
-		 UI::Window *         & registry);
-
-	Widelands::ProductionSite & productionsite() {
-		return ref_cast<Widelands::ProductionSite, Widelands::Building>(building());
-	}
+struct ProductionSiteWindow : public BuildingWindow {
+	ProductionSiteWindow(InteractiveGameBase& parent,
+	                     UI::UniqueWindow::Registry& reg,
+	                     Widelands::ProductionSite&,
+	                     bool avoid_fastclick,
+	                     bool workarea_preview_wanted);
 
 protected:
-	virtual void think();
+	void think() override;
+	void init(bool avoid_fastclick, bool workarea_preview_wanted) override;
+	void evict_worker();
 
 private:
-	UI::Table<uintptr_t> * m_worker_table;
+	void update_worker_table(Widelands::ProductionSite* production_site);
+
+	Widelands::OPtr<Widelands::ProductionSite> production_site_;
+	UI::Table<uintptr_t>* worker_table_;
+	UI::Box* worker_caps_;
+	std::unique_ptr<Notifications::Subscriber<Widelands::NoteBuilding>>
+	   productionsitenotes_subscriber_;
+
+	DISALLOW_COPY_AND_ASSIGN(ProductionSiteWindow);
 };
 
-#endif // _PRODUCTIONSITEWINDOW_H_
+#endif  // end of include guard: WL_WUI_PRODUCTIONSITEWINDOW_H

@@ -13,33 +13,26 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FIELDACTION_H
-#define FIELDACTION_H
+#ifndef WL_WUI_FIELDACTION_H
+#define WL_WUI_FIELDACTION_H
 
 #include "ui_basic/unique_window.h"
 
 namespace Widelands {
 class Building;
-struct Player;
+class Player;
 struct PlayerImmovable;
-}
-struct Interactive_Base;
-struct Interactive_Player;
+}  // namespace Widelands
+class InteractiveBase;
+class InteractivePlayer;
 
 // fieldaction.cc
-void show_field_action
-	(Interactive_Base           * parent,
-	 Widelands::Player          * player,
-	 UI::UniqueWindow::Registry * registry);
+void show_field_action(InteractiveBase* parent,
+                       Widelands::Player* player,
+                       UI::UniqueWindow::Registry* registry);
 
-// building_ui.cc
-void show_bulldoze_confirm
-	(Interactive_Player         & parent,
-	 Widelands::Building        & building,
-	 Widelands::PlayerImmovable * const todestroy);
-
-#endif
+#endif  // end of include guard: WL_WUI_FIELDACTION_H

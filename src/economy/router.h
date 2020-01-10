@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,45 +13,44 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
+#ifndef WL_ECONOMY_ROUTER_H
+#define WL_ECONOMY_ROUTER_H
 
-#ifndef ROUTER_H
-#define ROUTER_H
-
-#include <stdint.h>
 #include <vector>
+
 #include <boost/function.hpp>
+#include <stdint.h>
+
+#include "logic/map_objects/tribes/wareworker.h"
 
 namespace Widelands {
-class IRoute;
 class ITransportCostCalculator;
-class RoutingNode;
+struct IRoute;
+struct RoutingNode;
 
 /**
  * This class finds the best route between Nodes (Flags) in an economy.
  * The functionality was split from Economy
  */
 struct Router {
-	typedef boost::function<void ()> ResetCycleFn;
+	using ResetCycleFn = boost::function<void()>;
 
-	Router(const ResetCycleFn & reset);
+	explicit Router(const ResetCycleFn& reset);
 
-	bool find_route
-		(RoutingNode & start, RoutingNode & end,
-		 IRoute * route,
-		 bool    wait,
-		 int32_t cost_cutoff,
-		 ITransportCostCalculator   & cost_calculator);
+	bool find_route(RoutingNode& start,
+	                RoutingNode& end,
+	                IRoute* route,
+	                WareWorker type,
+	                int32_t cost_cutoff,
+	                ITransportCostCalculator& cost_calculator);
 	uint32_t assign_cycle();
 
 private:
-	ResetCycleFn m_reset;
-	uint32_t mpf_cycle;       ///< pathfinding cycle, see Flag::mpf_cycle
+	ResetCycleFn reset_;
+	uint32_t mpf_cycle;  ///< pathfinding cycle, see Flag::mpf_cycle
 };
-
-}
-#endif
-
-
+}  // namespace Widelands
+#endif  // end of include guard: WL_ECONOMY_ROUTER_H

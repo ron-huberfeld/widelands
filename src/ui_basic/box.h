@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006-2011 by the Widelands Development Team
+ * Copyright (C) 2003-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,94 +13,108 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_BOX_H
-#define UI_BOX_H
+#ifndef WL_UI_BASIC_BOX_H
+#define WL_UI_BASIC_BOX_H
 
-#include "panel.h"
-
+#include <memory>
 #include <vector>
 
+#include "graphic/align.h"
+#include "ui_basic/panel.h"
+#include "ui_basic/scrollbar.h"
+
 namespace UI {
-struct Scrollbar;
 
 /**
  * A layouting panel that holds a number of child panels.
+ *
  * The Panels you add to the Box must be children of the Box.
  * The Box automatically resizes itself and positions the added children.
-*/
+ */
 struct Box : public Panel {
+	// Determines whether the box' contents are layed out horizontally or vertically.
 	enum {
 		Horizontal = 0,
 		Vertical = 1,
-
-		AlignLeft = 0,
-		AlignTop = 0,
-		AlignCenter = 1,
-		AlignRight = 2,
-		AlignBottom = 2,
 	};
-public:
-	Box
-		(Panel * parent,
-		 int32_t x, int32_t y,
-		 uint32_t orientation,
-		 int32_t max_x = 0, int32_t max_y = 0);
+
+	Box(Panel* parent,
+	    int32_t x,
+	    int32_t y,
+	    uint32_t orientation,
+	    int32_t max_x = 0,
+	    int32_t max_y = 0,
+	    uint32_t inner_spacing = 0);
 
 	void set_scrolling(bool scroll);
 
-	int32_t get_nritems() const {return m_items.size();}
+	int32_t get_nritems() const {
+		return items_.size();
+	}
 
-	void add(Panel * panel, uint32_t align, bool fullsize = false);
+	enum class Resizing { kAlign, kFullSize, kFillSpace, kExpandBoth };
+	void add(Panel* panel, Resizing resizing = Resizing::kAlign, UI::Align align = UI::Align::kLeft);
 	void add_space(uint32_t space);
-	bool is_snap_target() const {return true;}
+	void add_inf_space();
+	bool is_snap_target() const override {
+		return true;
+	}
 
 	void set_min_desired_breadth(uint32_t min);
+	void set_inner_spacing(uint32_t size);
+	/// Sets the maximum dimensions and calls set_desired_size()
+	void set_max_size(int w, int h);
 
 protected:
-	virtual void layout();
-	virtual void update_desired_size();
+	void layout() override;
+	void update_desired_size() override;
+	bool handle_mousewheel(uint32_t which, int32_t x, int32_t y) override;
+	bool handle_key(bool down, SDL_Keysym code) override;
 
 private:
-	void get_item_desired_size(uint32_t idx, uint32_t & depth, uint32_t & breadth);
-	void set_item_size(uint32_t idx, uint32_t depth, uint32_t breadth);
+	void get_item_desired_size(uint32_t idx, int* depth, int* breadth);
+	void get_item_size(uint32_t idx, int* depth, int* breadth);
+	void set_item_size(uint32_t idx, int depth, int breadth);
 	void set_item_pos(uint32_t idx, int32_t pos);
 	void scrollbar_moved(int32_t);
 	void update_positions();
 
-	//don't resize beyond this size
-	uint32_t m_max_x, m_max_y;
+	// Don't resize beyond this size
+	int max_x_, max_y_;
 
-private:
 	struct Item {
 		enum Type {
 			ItemPanel,
-			ItemSpace
+			ItemSpace,
 		};
 
 		Type type;
 
 		union {
 			struct {
-				Panel * panel;
-				uint32_t align;
+				Panel* panel;
+				UI::Align align;
 				bool fullsize;
 			} panel;
-			uint32_t space;
+			int space;
 		} u;
+
+		bool fillspace;
+		int assigned_var_depth;
 	};
 
-	bool m_scrolling;
-	Scrollbar * m_scrollbar;
-	uint32_t m_orientation;
-	uint32_t m_mindesiredbreadth;
+	bool scrolling_;
+	std::unique_ptr<Scrollbar> scrollbar_;
+	uint32_t orientation_;
+	uint32_t mindesiredbreadth_;
+	uint32_t inner_spacing_;
 
-	std::vector<Item> m_items;
+	std::vector<Item> items_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_BOX_H

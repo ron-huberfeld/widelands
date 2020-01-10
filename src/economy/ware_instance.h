@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,26 +13,26 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef S__WARE_INSTANCE_H
-#define S__WARE_INSTANCE_H
+#ifndef WL_ECONOMY_WARE_INSTANCE_H
+#define WL_ECONOMY_WARE_INSTANCE_H
 
-#include "logic/widelands.h"
-#include "logic/instances.h"
-#include "logic/item_ware_descr.h"
-
-#include "transfer.h"
+#include "economy/transfer.h"
+#include "logic/map_objects/map_object.h"
+#include "logic/map_objects/tribes/ware_descr.h"
+#include "map_io/tribes_legacy_lookup_table.h"
 
 namespace Widelands {
 
-struct Economy;
-struct Editor_Game_Base;
-struct Game;
-class IdleWareSupply;
-class Map_Object;
+class Building;
+class Economy;
+class EditorGameBase;
+class Game;
+struct IdleWareSupply;
+class MapObject;
 struct PlayerImmovable;
 struct Transfer;
 
@@ -42,81 +42,91 @@ struct Transfer;
  * The WareInstance never draws itself; the carrying worker or the current flag
  * location are responsible for that.
  *
- * The location of a ware can be one of the following:
- * \li a flag
- * \li a worker that is currently carrying the ware
- * \li a building; this should only be temporary until the ware is incorporated
- *     into the building somehow
+ * For robustness reasons, a WareInstance can only exist in a location that
+ * assumes responsible for updating the instance's economy via \ref set_economy,
+ * and that destroys the WareInstance when the location is destroyed.
+ *
+ * Currently, the location of a ware can be one of the following:
+ * \li a \ref Flag
+ * \li a \ref Worker that is currently carrying the ware
+ * \li a \ref PortDock or \ref Ship where the ware is encapsulated in a \ref ShippingItem
+ *     for seafaring
  */
-class WareInstance : public Map_Object {
-	friend struct Map_Waredata_Data_Packet;
+class WareInstance : public MapObject {
+	friend struct MapWaredataPacket;
 
-	MO_DESCR(Item_Ware_Descr);
+	MO_DESCR(WareDescr)
 
 public:
-	WareInstance(Ware_Index, const Item_Ware_Descr * const);
-	~WareInstance();
+	WareInstance(DescriptionIndex, const WareDescr* const);
+	~WareInstance() override;
 
-	virtual int32_t get_type() const throw ();
-	char const * type_name() const throw () {return "ware";}
-
-	Map_Object * get_location(Editor_Game_Base & egbase) {
-		return m_location.get(egbase);
+	MapObject* get_location(EditorGameBase& egbase) {
+		return location_.get(egbase);
 	}
-	Economy * get_economy() const throw () {return m_economy;}
-	Ware_Index descr_index() const throw () {return m_descr_index;}
+	Economy* get_economy() const {
+		return economy_;
+	}
+	DescriptionIndex descr_index() const {
+		return descr_index_;
+	}
 
-	void init(Editor_Game_Base &);
-	void cleanup(Editor_Game_Base &);
-	void act(Game &, uint32_t data);
-	void update(Game &);
+	bool init(EditorGameBase&) override;
+	void cleanup(EditorGameBase&) override;
+	void act(Game&, uint32_t data) override;
+	void update(Game&);
 
-	void set_location(Editor_Game_Base &, Map_Object * loc);
-	void set_economy(Economy *);
+	void set_location(EditorGameBase&, MapObject* loc);
+	void set_economy(Economy*);
 
-	bool is_moving() const throw ();
+	void enter_building(Game&, Building& building);
+
+	bool is_moving() const;
 	void cancel_moving();
 
-	PlayerImmovable * get_next_move_step(Game &);
+	PlayerImmovable* get_next_move_step(Game&);
 
-	void set_transfer(Game &, Transfer &);
-	void cancel_transfer(Game &);
-	Transfer * get_transfer() const {return m_transfer;}
+	void set_transfer(Game&, Transfer&);
+	void cancel_transfer(Game&);
+	Transfer* get_transfer() const {
+		return transfer_;
+	}
+
+	void log_general_info(const EditorGameBase& egbase) const override;
 
 private:
-	Object_Ptr        m_location;
-	Economy         * m_economy;
-	Ware_Index       m_descr_index;
+	ObjectPointer location_;
+	Economy* economy_;
+	DescriptionIndex descr_index_;
 
-	IdleWareSupply  * m_supply;
-	Transfer       * m_transfer;
-	Object_Ptr        m_transfer_nextstep; ///< cached PlayerImmovable, can be 0
+	IdleWareSupply* supply_;
+	Transfer* transfer_;
+	ObjectPointer transfer_nextstep_;  ///< cached PlayerImmovable, can be 0
 
 	// loading and saving stuff
 protected:
-	struct Loader : Map_Object::Loader {
-		Loader();
+	struct Loader : MapObject::Loader {
+		Loader() = default;
 
-		void load(FileRead &);
-		virtual void load_pointers();
-		virtual void load_finish();
+		void load(FileRead&);
+		void load_pointers() override;
+		void load_finish() override;
 
 	private:
-		uint32_t m_location;
-		uint32_t m_transfer_nextstep;
-		Transfer::ReadData m_transfer;
+		uint32_t location_ = 0U;
+		uint32_t transfer_nextstep_ = 0U;
+		Transfer::ReadData transfer_;
 	};
 
 public:
-	virtual bool has_new_save_support() {return true;}
+	bool has_new_save_support() override {
+		return true;
+	}
 
-	virtual void save(Editor_Game_Base &, Map_Map_Object_Saver &, FileWrite &);
-	static Map_Object::Loader * load
-		(Editor_Game_Base &, Map_Map_Object_Loader &, FileRead &);
+	void save(EditorGameBase&, MapObjectSaver&, FileWrite&) override;
+	static MapObject::Loader*
+	load(EditorGameBase&, MapObjectLoader&, FileRead&, const TribesLegacyLookupTable& lookup_table);
 };
+}  // namespace Widelands
 
-}
-
-
-#endif
-
+#endif  // end of include guard: WL_ECONOMY_WARE_INSTANCE_H

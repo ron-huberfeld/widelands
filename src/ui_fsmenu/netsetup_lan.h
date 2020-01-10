@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,78 +13,73 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef FULLSCREEN_MENU_NETSETUP_LAN_H
-#define FULLSCREEN_MENU_NETSETUP_LAN_H
+#ifndef WL_UI_FSMENU_NETSETUP_LAN_H
+#define WL_UI_FSMENU_NETSETUP_LAN_H
 
-#include "network/network_lan_promotion.h"
-
-#include "ui_basic/button.h"
-#include "ui_basic/textarea.h"
-#include "ui_basic/editbox.h"
-#include "ui_basic/table.h"
-
+#include <cstring>
 #include <list>
 #include <string>
-#include <cstring>
 
-#include "base.h"
+#include "network/network_lan_promotion.h"
+#include "ui_basic/button.h"
+#include "ui_basic/editbox.h"
+#include "ui_basic/table.h"
+#include "ui_basic/textarea.h"
+#include "ui_fsmenu/base.h"
 
-class Net_Open_Game;
-struct Net_Game_Info;
+struct NetOpenGame;
+struct NetGameInfo;
 
-struct Fullscreen_Menu_NetSetupLAN : public Fullscreen_Menu_Base {
-	enum {
-		CANCEL = 0,
-		HOSTGAME,
-		JOINGAME,
-	};
+class FullscreenMenuNetSetupLAN : public FullscreenMenuBase {
+public:
+	FullscreenMenuNetSetupLAN();
 
-	Fullscreen_Menu_NetSetupLAN ();
-
-	virtual void think();
+	void think() override;
 
 	/**
-	 * \param[out] addr filled in with the IP address of the chosen server
-	 * \param[out] port filled in with the port of the chosen server
-	 * \return \c true if a valid server has been chosen. If \c false is
-	 * returned, the values of \p addr and \p port are undefined.
+	 * \param[out] addr filled in with the host name or IP address and port of the chosen server
+	 * \return \c True if the address is valid, \c false otherwise. In that case \c addr is not
+	 * modified
 	 */
-	bool get_host_address (uint32_t & addr, uint16_t & port);
+	bool get_host_address(NetAddress* addr);
 
 	/**
 	 * \return the name chosen by the player
 	 */
-	std::string const & get_playername();
+	const std::string& get_playername();
+
+protected:
+	void clicked_ok() override;
 
 private:
-	uint32_t                                    m_butx;
-	uint32_t                                    m_butw;
-	uint32_t                                    m_buth;
-	uint32_t                                    m_lisw;
-	UI::Textarea                                title, m_opengames;
-	UI::Textarea                                m_playername, m_hostname;
-	UI::Callback_Button                     joingame, hostgame, back, loadlasthost;
-	UI::EditBox                                 playername;
-	UI::EditBox                                 hostname;
-	UI::Table<const Net_Open_Game * const>      opengames;
-	LAN_Game_Finder                             discovery;
+	void layout() override;
 
-	void game_selected (uint32_t);
-	void game_doubleclicked (uint32_t);
+	uint32_t butx_;
+	uint32_t butw_;
+	uint32_t buth_;
+	uint32_t listw_;
+	UI::Textarea title, opengames_;
+	UI::Textarea playername_, hostname_;
+	UI::Button joingame, hostgame, back, loadlasthost;
+	UI::EditBox playername;
+	UI::EditBox hostname;
+	UI::Table<const NetOpenGame* const> opengames;
+	LanGameFinder discovery;
 
-	static void discovery_callback (int32_t, Net_Open_Game const *, void *);
+	void game_selected(uint32_t);
+	void game_doubleclicked(uint32_t);
 
-	void game_opened  (Net_Open_Game const *);
-	void game_closed  (Net_Open_Game const *);
-	void game_updated (Net_Open_Game const *);
+	static void discovery_callback(int32_t, NetOpenGame const*, void*);
 
-	void update_game_info
-		(UI::Table<const Net_Open_Game * const>::Entry_Record &,
-		 const Net_Game_Info &);
+	void game_opened(NetOpenGame const*);
+	void game_closed(NetOpenGame const*);
+	void game_updated(NetOpenGame const*);
+
+	void update_game_info(UI::Table<const NetOpenGame* const>::EntryRecord&, const NetGameInfo&);
 
 	void change_hostname();
 	void change_playername();
@@ -93,4 +88,4 @@ private:
 	void clicked_lasthost();
 };
 
-#endif
+#endif  // end of include guard: WL_UI_FSMENU_NETSETUP_LAN_H

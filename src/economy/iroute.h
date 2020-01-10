@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2004-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,18 +13,18 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef IROUTE_H
-#define IROUTE_H
+#ifndef WL_ECONOMY_IROUTE_H
+#define WL_ECONOMY_IROUTE_H
 
 #include <stdint.h>
 
 namespace Widelands {
 
-class RoutingNode;
+struct RoutingNode;
 
 /**
  * This class represents a Route Interface, a virtual base class
@@ -38,11 +38,11 @@ class RoutingNode;
  * interface
  **/
 struct IRoute {
-	virtual ~IRoute() {};
+	virtual ~IRoute() {
+	}
 
 	virtual void init(int32_t) = 0;
-	virtual void insert_as_first(RoutingNode * node) = 0;
+	virtual void insert_as_first(RoutingNode* node) = 0;
 };
-
-}
-#endif
+}  // namespace Widelands
+#endif  // end of include guard: WL_ECONOMY_IROUTE_H

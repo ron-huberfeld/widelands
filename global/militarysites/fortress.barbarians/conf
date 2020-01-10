@@ -1,9 +1,0 @@
-size=big
-max_soldiers=8
-heal_per_second=1
-conquers=11
-buildable=no
-
-[idle]
-pics=../../../tribes/barbarians/fortress/fortress_i_??.png
-hotspot=81 66

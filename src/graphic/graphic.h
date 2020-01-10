@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2011 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,237 +13,128 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef GRAPHIC_H
-#define GRAPHIC_H
+#ifndef WL_GRAPHIC_GRAPHIC_H
+#define WL_GRAPHIC_GRAPHIC_H
 
-#include "animation_gfx.h"
-#include "picture_id.h"
-#include "surfaceptr.h"
-#include "rect.h"
+#include <memory>
 
-#include <png.h>
+#include <SDL.h>
 
-#include <vector>
-#include <map>
-#include <boost/shared_ptr.hpp>
+#include "graphic/image_cache.h"
+#include "graphic/style_manager.h"
+#include "notifications/note_ids.h"
+#include "notifications/notifications.h"
 
-/**
- * Names of road terrains
- */
-#define ROAD_NORMAL_PIC "pics/roadt_normal.png"
-#define ROAD_BUSY_PIC   "pics/roadt_busy.png"
+class AnimationManager;
+class RenderTarget;
+class Screen;
+class StreamWrite;
 
-#define MAX_RECTS 20
+// A graphics card must at least support this size for texture for Widelands to
+// run.
+constexpr int kMinimumSizeForTextures = 2048;
 
-namespace UI {struct ProgressWindow;}
+// Will be send whenever the resolution changes.
+struct GraphicResolutionChanged {
+	CAN_BE_SENT_AS_NOTE(NoteId::GraphicResolutionChanged)
 
-struct IPixelAccess;
-struct RenderTarget;
-struct Graphic;
-struct Road_Textures;
-struct StreamWrite;
-struct Texture;
-struct SDL_Surface;
-struct SDL_Rect;
-
-//@{
-/// This table is used by create_grayed_out_pic()to map colors to grayscle. It
-/// is initialized in Graphic::Graphic().
-extern uint32_t luminance_table_r[0x100];
-extern uint32_t luminance_table_g[0x100];
-extern uint32_t luminance_table_b[0x100];
-//@}
-
-/// Stores the capabilities of opengl
-struct GLCaps
-{
-	/// The OpenGL major version
-	int major_version;
-	/// The OpenGL minor version
-	int minor_version;
-	/// The maximum texture size
-	int tex_max_size;
-	/// If true sizes of texture must be a power of two
-	bool tex_power_of_two;
-	/// How many bits the stencil buffer support
-	int stencil_buffer_bits;
-	/// How many Aux Buffers the opengl context support
-	int aux_buffers;
-	/// Whether the BlendEquation support is available
-	bool blendequation;
+	// New width and height in pixels.
+	int width;
+	int height;
 };
 
 /**
- * A structure to store the capabilities of the current rendere. This is set
- * during init() and can be retrieved by g_gr->get_caps()
+ * This class is a kind of Swiss Army knife for your graphics need.
+ * It initializes the graphic system and provides access to
+ * resolutions. It owns an Animation, Image and Surface cache. It
+ * also offers functionality to save a screenshot.
  */
-struct GraphicCaps
-{
-	/// The renderer allows rendering (blit, draw_line) to offscreen surfaces
-	bool offscreen_rendering;
-	/// The capabilities of the opengl hardware and drive
-	GLCaps gl;
-};
-
-/**
- * Picture caches (modules).
- *
- * \ref Graphic maintains a cache of \ref PictureID s to avoid continuous re-loading of
- * pictures that may not be referenced all the time (e.g. UI elements).
- *
- * This cache is separated into different modules, and can be flushed per-module.
- */
-enum PicMod {
-	PicMod_UI = 0,
-	PicMod_Menu,
-	PicMod_Game,
-
-	// Must be last
-	PicMod_Last
-};
-
-
-/**
- * A renderer to get pixels to a 16bit framebuffer.
- *
- * Picture IDs can be allocated using \ref get_picture() and used in
- * \ref RenderTarget::blit().
- *
- * Pictures are only loaded from disk once and thrown out of memory when the
- * graphics system is unloaded, or when \ref flush() is called with the
- * appropriate module flag; the user can request to flush one single picture
- * alone, but this is only used (and useful) in the editor.
- */
-struct Graphic {
-	Graphic
-		(int32_t w, int32_t h, int32_t bpp,
-		 bool fullscreen, bool opengl);
+class Graphic {
+public:
+	// Creates a new Graphic object. Must call initialize before first use.
+	Graphic();
 	~Graphic();
 
-	int32_t get_xres() const;
-	int32_t get_yres() const;
-	RenderTarget * get_render_target();
-	void toggle_fullscreen();
-	void update_fullscreen();
-	void update_rectangle(int32_t x, int32_t y, int32_t w, int32_t h);
-	void update_rectangle(Rect const & rect) {
-		update_rectangle (rect.x, rect.y, rect.w, rect.h);
+	// Initializes with the given resolution if fullscreen is false, otherwise a
+	// window that fills the screen. The 'trace_gl' parameter gets passed on to
+	// 'Gl::initialize'.
+	enum class TraceGl { kNo, kYes };
+	void
+	initialize(const TraceGl& trace_gl, int window_mode_w, int window_mode_height, bool fullscreen);
+
+	// Gets and sets the resolution.
+	void change_resolution(int w, int h);
+	int get_xres();
+	int get_yres();
+
+	// Changes the window to be fullscreen or not.
+	bool fullscreen();
+	void set_fullscreen(bool);
+
+	RenderTarget* get_render_target();
+	void refresh();
+	SDL_Window* get_sdlwindow() {
+		return sdl_window_;
 	}
-	bool need_update() const;
-	void refresh(bool force = true);
 
-	void flush(PicMod module);
-	void flush_animations();
-	PictureID load_image(std::string const &, bool alpha = false);
-	const PictureID & get_picture(PicMod, std::string const &, bool alpha = true)
-		__attribute__ ((pure));
-	void add_picture_to_cache(PicMod, const std::string &, PictureID);
-	const PictureID & get_no_picture() const;
+	int max_texture_size_for_font_rendering() const;
 
-	void get_picture_size
-		(const PictureID & pic, uint32_t & w, uint32_t & h) const;
-	PictureID get_offscreen_picture(OffscreenSurfacePtr surface) const;
+	ImageCache& images() const {
+		return *image_cache_.get();
+	}
+	AnimationManager& animations() const {
+		return *animation_manager_.get();
+	}
+	StyleManager& styles() const {
+		return *style_manager_.get();
+	}
 
-	void save_png(const PictureID &, StreamWrite *) const;
-	void save_png(SurfacePtr surf, StreamWrite *) const;
-	void save_png(IPixelAccess & pix, StreamWrite *) const;
-
-	PictureID convert_sdl_surface_to_picture(SDL_Surface *, bool alpha = false);
-
-	OffscreenSurfacePtr create_offscreen_surface(int32_t w, int32_t h);
-	PictureID create_picture(int32_t w, int32_t h, bool alpha = false);
-
-	PictureID create_grayed_out_pic(const PictureID & picid);
-
-	enum  ResizeMode {
-		// do not worry about proportions, just sketch to requested size
-		ResizeMode_Loose,
-		// keep proportions, clip wider edge
-		ResizeMode_Clip,
-		// keep proportions, leave empty border if needed
-		ResizeMode_LeaveBorder,
-		// keep proportions, balance clipping and borders
-		ResizeMode_Average,
-	};
-
-	PictureID get_resized_picture
-		(PictureID, uint32_t w, uint32_t h, ResizeMode);
-
-	uint32_t get_maptexture(char const & fnametempl, uint32_t frametime);
-	void animate_maptextures(uint32_t time);
-	void reset_texture_animation_reminder();
-
-	void load_animations(UI::ProgressWindow & loader_ui);
-	AnimationGfx::Index nr_frames(uint32_t const anim = 0) const;
-	uint32_t get_animation_frametime(uint32_t anim) const;
-	void get_animation_size
-		(const uint32_t anim,
-		 const uint32_t time,
-		 uint32_t & w,
-		 uint32_t & h)
-		const;
-
-	void screenshot(const char & fname) const;
-	Texture * get_maptexture_data(uint32_t id);
-	AnimationGfx * get_animation(uint32_t) const;
-
-	PictureID get_road_texture(int32_t roadtex);
-
-	GraphicCaps const & caps() const throw () {return m_caps;}
+	// Requests a screenshot being taken on the next frame.
+	void screenshot(const std::string& fname);
 
 private:
-	SDL_Surface * extract_sdl_surface(IPixelAccess & pix, Rect srcrect);
+	// Called when the resolution (might) have changed.
+	void resolution_changed();
 
-protected:
-	// Static helper function for png writing
-	static void m_png_write_function
-		(png_structp png_ptr,
-		 png_bytep data,
-		 png_size_t length);
-	static void m_png_flush_function (png_structp png_ptr);
+	// The height & width of the window should we be in window mode.
+	int window_mode_width_ = 0;
+	int window_mode_height_ = 0;
 
 	/// This is the main screen Surface.
 	/// A RenderTarget for this can be retrieved with get_render_target()
-	SurfacePtr m_screen;
+	std::unique_ptr<Screen> screen_;
+
 	/// This saves a copy of the screen SDL_Surface. This is needed for
 	/// opengl rendering as the SurfaceOpenGL does not use it. It allows
 	/// manipulation the screen context.
-	SDL_Surface * m_sdl_screen;
-	/// A RenderTarget for m_screen. This is initialized during init()
-	RenderTarget * m_rendertarget;
-	/// keeps track which screen regions needs to be redrawn during the next
-	/// update(). Only used for SDL rendering.
-	SDL_Rect m_update_rects[MAX_RECTS];
-	/// saves how many screen regions need updating. @see m_update_rects
-	int32_t m_nr_update_rects;
-	/// This marks the komplete screen for updating.
-	bool m_update_fullscreen;
-	/// stores which features the current renderer has
-	GraphicCaps m_caps;
+	SDL_Window* sdl_window_ = nullptr;
+	SDL_GLContext gl_context_;
 
-	struct PictureRec {
-		PictureID picture;
+	/// The maximum width or height a texture can have.
+	int max_texture_size_ = kMinimumSizeForTextures;
 
-		/// bit-mask of modules that this picture exists in
-		uint32_t modules;
-	};
+	/// A RenderTarget for screen_. This is initialized during init()
+	std::unique_ptr<RenderTarget> render_target_;
 
-	typedef std::map<std::string, PictureRec> Picturemap;
-	typedef Picturemap::iterator pmit;
+	/// Non-volatile cache of independent images.
+	std::unique_ptr<ImageCache> image_cache_;
 
-	/// hash of cached filename/picture pairs
-	Picturemap m_picturemap;
+	/// This holds all animations.
+	std::unique_ptr<AnimationManager> animation_manager_;
 
-	Road_Textures * m_roadtextures;
-	std::vector<Texture *> m_maptextures;
-	std::vector<AnimationGfx *> m_animations;
+	/// This holds all GUI styles.
+	std::unique_ptr<StyleManager> style_manager_;
+
+	/// Screenshot filename. If a screenshot is requested, this will be set to
+	/// the requested filename. On the next frame the screenshot will be written
+	/// out and this will be clear()ed again.
+	std::string screenshot_filename_;
 };
 
-extern Graphic * g_gr;
-extern bool g_opengl;
+extern Graphic* g_gr;
 
-#endif
+#endif  // end of include guard: WL_GRAPHIC_GRAPHIC_H

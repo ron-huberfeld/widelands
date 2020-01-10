@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 by the Widelands Development Team
+ * Copyright (C) 2009-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,19 +13,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "game_data_error.h"
+#include "logic/game_data_error.h"
 
 #include <cstdarg>
 #include <cstdio>
 
+#include <boost/format.hpp>
+
+#include "base/i18n.h"
+
 namespace Widelands {
 
-game_data_error::game_data_error(char const * const fmt, ...)
-{
+GameDataError::GameDataError(char const* const fmt, ...) {
 	char buffer[512];
 	{
 		va_list va;
@@ -33,7 +36,18 @@ game_data_error::game_data_error(char const * const fmt, ...)
 		vsnprintf(buffer, sizeof(buffer), fmt, va);
 		va_end(va);
 	}
-	m_what = buffer;
+	what_ = buffer;
 }
 
+UnhandledVersionError::UnhandledVersionError(const char* packet_name,
+                                             int32_t packet_version,
+                                             int32_t current_packet_version) {
+	what_ =
+	   (boost::format("\n\nUnhandledVersionError: %s\n\nPacket Name: %s\nSaved Version: %i\nCurrent "
+	                  "Version: %i") %
+	    _("This game was saved using an older version of Widelands and cannot be loaded anymore, "
+	      "or it's a new version that can't be handled yet.") %
+	    packet_name % static_cast<int>(packet_version) % static_cast<int>(current_packet_version))
+	      .str();
 }
+}  // namespace Widelands

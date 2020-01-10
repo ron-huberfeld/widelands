@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 by the Widelands Development Team
+ * Copyright (C) 2006-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,17 +13,22 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef MAPVIEWPIXELCONSTANTS_H
-#define MAPVIEWPIXELCONSTANTS_H
+#ifndef WL_WUI_MAPVIEWPIXELCONSTANTS_H
+#define WL_WUI_MAPVIEWPIXELCONSTANTS_H
 
-//  These are constants with the unit pixel.
-#define TRIANGLE_WIDTH 64
-#define TRIANGLE_HEIGHT 32
-#define HEIGHT_FACTOR 5
+// These are constants with the unit map pixel, i.e. at zoom = 1 a triangle on
+// screen is kTriangleWidth pixels wide. Map pixelspace is used in many places
+// when the hexagonal fields coordinate space is insufficient. For example draw
+// calculations first figure out where something needs to be drawn in map pixel
+// space, then this is converted into screen space taking zoom into account.
+constexpr int kTriangleWidth = 64;
+constexpr int kTriangleHeight = 32;
+constexpr int kHeightFactor = 5;
+constexpr float kHeightFactorFloat =
+   5.0f;  // Same a kHeightFactor to avoid implict upcasts to double
 
-
-#endif
+#endif  // end of include guard: WL_WUI_MAPVIEWPIXELCONSTANTS_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2011 by the Widelands Development Team
+ * Copyright (C) 2010-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,19 +13,24 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef WORDWRAP_H
-#define WORDWRAP_H
+#ifndef WL_GRAPHIC_WORDWRAP_H
+#define WL_GRAPHIC_WORDWRAP_H
 
+#include <memory>
 #include <string>
+#include <unicode/uchar.h>
+#include <vector>
 
-#include "font.h"
-#include "point.h"
-#include "ui_basic/align.h"
+#include "base/vector.h"
+#include "graphic/align.h"
+#include "graphic/color.h"
+#include "graphic/graphic.h"
+#include "graphic/text/sdl_ttf_font.h"
 
-struct RenderTarget;
+class RenderTarget;
 
 namespace UI {
 
@@ -33,25 +38,31 @@ namespace UI {
  * Helper struct that provides word wrapping and related functionality.
  */
 struct WordWrap {
-	WordWrap();
-	WordWrap(const TextStyle & style, uint32_t wrapwidth = std::numeric_limits<uint32_t>::max());
+	static constexpr int kLineMargin = 1;
 
-	void set_style(const TextStyle & style);
+	explicit WordWrap(int fontsize, const RGBColor& color, uint32_t wrapwidth);
+
 	void set_wrapwidth(uint32_t wrapwidth);
 
 	uint32_t wrapwidth() const;
 
-	void wrap(const std::string & text);
+	void wrap(const std::string& text);
 
 	uint32_t width() const;
 	uint32_t height() const;
+	void set_draw_caret(bool draw_it) {
+		draw_caret_ = draw_it;
+	}
 
-	void draw
-		(RenderTarget & dst, Point where, Align align = Align_Left,
-		 uint32_t caret = std::numeric_limits<uint32_t>::max());
+	void draw(RenderTarget& dst,
+	          Vector2i where,
+	          Align align = UI::Align::kLeft,
+	          uint32_t caret = std::numeric_limits<uint32_t>::max());
 
-	void calc_wrapped_pos(uint32_t caret, uint32_t & line, uint32_t & pos) const;
-	uint32_t nrlines() const {return m_lines.size();}
+	void calc_wrapped_pos(uint32_t caret, uint32_t& line, uint32_t& pos) const;
+	uint32_t nrlines() const {
+		return lines_.size();
+	}
 	uint32_t line_offset(uint32_t line) const;
 
 private:
@@ -60,21 +71,33 @@ private:
 		std::string text;
 
 		/// Starting offset of this line within the original un-wrapped text
-		uint32_t start;
+		size_t start;
 	};
 
-	void compute_end_of_line
-		(const std::string & text,
-		 std::string::size_type line_start,
-		 std::string::size_type & line_end,
-		 std::string::size_type & next_line_start);
+	void compute_end_of_line(const std::string& text,
+	                         std::string::size_type line_start,
+	                         std::string::size_type& line_end,
+	                         std::string::size_type& next_line_start,
+	                         uint32_t safety_margin);
 
-	TextStyle m_style;
-	uint32_t m_wrapwidth;
+	bool line_fits(const std::string& text, uint32_t safety_margin) const;
 
-	std::vector<LineData> m_lines;
+	uint32_t quick_width(const UChar& c) const;
+	uint32_t quick_width(const std::string& text) const;
+
+	uint32_t wrapwidth_;
+	bool draw_caret_;
+
+	// TODO(GunChleoc): We can tie these to constexpr once the old font renderer is gone.
+	const int fontsize_;
+	RGBColor color_;
+
+	// Editor font is sans bold.
+	std::unique_ptr<RT::IFont> font_;
+
+	std::vector<LineData> lines_;
 };
 
-} // namespace UI
+}  // namespace UI
 
-#endif // WORDWRAP_H
+#endif  // end of include guard: WL_GRAPHIC_WORDWRAP_H

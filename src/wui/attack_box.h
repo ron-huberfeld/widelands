@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,24 +13,27 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef _ATTACK_BOX_H_
-#define _ATTACK_BOX_H_
+#ifndef WL_WUI_ATTACK_BOX_H
+#define WL_WUI_ATTACK_BOX_H
 
-#include "graphic/picture_id.h"
-#include "logic/attackable.h"
-#include "logic/bob.h"
-#include "logic/soldier.h"
+#include <list>
+#include <memory>
+#include <set>
+#include <vector>
+
+#include "graphic/font_handler.h"
+#include "graphic/text/font_set.h"
+#include "logic/map_objects/bob.h"
+#include "logic/map_objects/tribes/soldier.h"
 #include "logic/player.h"
-
 #include "ui_basic/box.h"
 #include "ui_basic/button.h"
 #include "ui_basic/slider.h"
 #include "ui_basic/textarea.h"
-#include <list>
 
 using Widelands::Bob;
 using Widelands::Building;
@@ -41,56 +44,120 @@ using Widelands::Soldier;
  * when clicking on an enemy building.
  */
 struct AttackBox : public UI::Box {
-	AttackBox
-		(UI::Panel              * parent,
-		 Widelands::Player      * player,
-		 Widelands::FCoords     * target,
-		 uint32_t  const              x,
-		 uint32_t  const              y);
-	~AttackBox();
+	AttackBox(UI::Panel* parent,
+	          Widelands::Player* player,
+	          Widelands::FCoords* target,
+	          uint32_t const x,
+	          uint32_t const y);
 
 	void init();
 
-	uint32_t soldiers() const;
-	uint8_t  retreat() const;
+	size_t count_soldiers() const;
+	std::vector<Widelands::Serial> soldiers() const;
+
+	UI::Button* get_attack_button() const {
+		return attack_button_.get();
+	}
+
+private:
+	std::vector<Widelands::Soldier*> get_max_attackers();
+	std::unique_ptr<UI::HorizontalSlider> add_slider(UI::Box& parent,
+	                                                 uint32_t width,
+	                                                 uint32_t height,
+	                                                 uint32_t min,
+	                                                 uint32_t max,
+	                                                 uint32_t initial,
+	                                                 char const* hint);
+	UI::Textarea&
+	add_text(UI::Box& parent, std::string str, UI::Align alignment, const UI::FontStyle style);
+	std::unique_ptr<UI::Button> add_button(UI::Box& parent,
+	                                       const std::string& text,
+	                                       void (AttackBox::*fn)(),
+	                                       const std::string& tooltip_text);
+
+	void think() override;
+	void update_attack(bool);
+	void send_less_soldiers();
+	void send_more_soldiers();
+
+private:
+	Widelands::Player* player_;
+	const Widelands::Map& map_;
+	Widelands::FCoords* node_coordinates_;
+
+	std::unique_ptr<UI::Slider> soldiers_slider_;
+	std::unique_ptr<UI::Textarea> soldiers_text_;
+
+	std::unique_ptr<UI::Button> less_soldiers_;
+	std::unique_ptr<UI::Button> more_soldiers_;
+
+	// A SoldierPanel is not applicable here as it's keyed to a building and thinks too much
+	struct ListOfSoldiers : public UI::Panel {
+		ListOfSoldiers(UI::Panel* const parent,
+		               AttackBox* parent_box,
+		               int32_t const x,
+		               int32_t const y,
+		               int const w,
+		               int const h,
+		               bool restrict_rows = false);
+
+		bool handle_mousepress(uint8_t btn, int32_t x, int32_t y) override;
+		void handle_mousein(bool) override;
+		bool handle_mousemove(uint8_t, int32_t, int32_t, int32_t, int32_t) override;
+
+		const Widelands::Soldier* soldier_at(int32_t x, int32_t y) const;
+		void add(const Widelands::Soldier*);
+		void remove(const Widelands::Soldier*);
+		bool contains(const Widelands::Soldier* soldier) const {
+			for (const auto& s : soldiers_) {
+				if (s == soldier) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		std::vector<const Widelands::Soldier*> get_soldiers() const {
+			return soldiers_;
+		}
+		const Widelands::Soldier* get_soldier() const {
+			return soldiers_.back();
+		}
+
+		size_t count_soldiers() const {
+			return soldiers_.size();
+		}
+		Widelands::Extent size() const;
+		bool row_number_restricted() const {
+			return restricted_row_number_;
+		}
+		void set_row_number_restricted(bool r) {
+			restricted_row_number_ = r;
+		}
+
+		void draw(RenderTarget& dst) override;
+
+		void set_complement(ListOfSoldiers* o) {
+			other_ = o;
+		}
 
 	private:
-		uint32_t get_max_attackers();
-		UI::Slider & add_slider
-			(UI::Box    & parent,
-			 uint32_t      width,
-			 uint32_t      height,
-			 uint32_t      min, uint32_t max, uint32_t initial,
-			 char const  * picname,
-			 char const  * hint);
-		UI::Textarea & add_text
-			(UI::Box           & parent,
-			 std::string         str,
-			 uint32_t            alignment = UI::Box::AlignTop,
-			 std::string const & fontname = UI_FONT_NAME,
-			 uint32_t            fontsize = UI_FONT_SIZE_SMALL);
-		UI::Callback_Button & add_button
-			(UI::Box           & parent,
-			 char const * picname,
-			 void (AttackBox::*fn)(),
-			 std::string const & tooltip_text);
+		bool restricted_row_number_;
+		uint16_t current_size_;  // Current number of rows or columns
+		std::vector<const Widelands::Soldier*> soldiers_;
 
-		void update_attack();
-		void send_less_soldiers();
-		void send_more_soldiers();
+		ListOfSoldiers* other_;
+		AttackBox* attack_box_;
 
-	private:
-		Widelands::Player     * m_pl;
-		Widelands::Map        * m_map;
-		Widelands::FCoords    * m_node;
+		void update_desired_size() override;
+	};
 
-		UI::Slider            * m_slider_retreat;
-		UI::Slider            * m_slider_soldiers;
-		UI::Textarea          * m_text_soldiers;
-		UI::Textarea          * m_text_retreat;
+	std::unique_ptr<ListOfSoldiers> attacking_soldiers_;
+	std::unique_ptr<ListOfSoldiers> remaining_soldiers_;
+	std::unique_ptr<UI::Button> attack_button_;
 
-		UI::Callback_Button * m_less_soldiers;
-		UI::Callback_Button * m_add_soldiers;
+	/// The last time the information in this Panel got updated
+	uint32_t lastupdate_;
 };
 
-#endif
+#endif  // end of include guard: WL_WUI_ATTACK_BOX_H

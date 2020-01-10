@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002, 2006-2010 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,187 +13,217 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "button.h"
+#include "ui_basic/button.h"
 
-#include "mouse_constants.h"
-
-#include "graphic/font.h"
 #include "graphic/font_handler.h"
-#include "graphic/picture.h"
+#include "graphic/graphic.h"
+#include "graphic/image.h"
 #include "graphic/rendertarget.h"
-#include "wlapplication.h"
-#include "log.h"
-
+#include "graphic/style_manager.h"
+#include "graphic/text_layout.h"
+#include "ui_basic/mouse_constants.h"
 
 namespace UI {
 
-Button::Button //  for textual buttons
-	(Panel * const parent,
-	 const std::string & name,
-	 int32_t const x, int32_t const y, uint32_t const w, uint32_t const h,
-	 PictureID background_picture_id,
-	 std::string const & title_text,
-	 std::string const & tooltip_text,
-	 bool const _enabled, bool const flat)
-	:
-	NamedPanel           (parent, name, x, y, w, h, tooltip_text),
-	m_highlighted   (false),
-	m_pressed       (false),
-	m_permpressed   (false),
-	m_enabled       (_enabled),
-	m_repeating     (false),
-	m_flat          (flat),
-	m_draw_flat_background(false),
-	m_title         (title_text),
-	m_pic_background(background_picture_id),
-	m_pic_custom    (g_gr->get_no_picture()),
-	m_pic_custom_disabled(g_gr->get_no_picture()),
-	m_font(UI::Font::ui_small()),
-	m_clr_down      (229, 161, 2),
-	m_draw_caret    (false)
-{
-	set_think(false);
+// Margin around image. The image will be scaled down to fit into this rectangle with preserving
+// size.
+constexpr int kButtonImageMargin = 2;
 
-	if (m_pic_background && m_pic_background->valid())
-		set_cache(true);
+Button::Button  //  Common constructor
+   (Panel* const parent,
+    const std::string& name,
+    int32_t const x,
+    int32_t const y,
+    uint32_t const w,
+    uint32_t const h,
+    UI::ButtonStyle init_style,
+    const Image* title_image,
+    const std::string& title_text,
+    const std::string& tooltip_text,
+    UI::Button::VisualState init_state,
+    ImageMode mode)
+   : NamedPanel(parent, name, x, y, w, h, tooltip_text),
+     highlighted_(false),
+     pressed_(false),
+     enabled_(true),
+     visual_state_(init_state),
+     disable_style_(ButtonDisableStyle::kMonochrome),
+     repeating_(false),
+     image_mode_(mode),
+     time_nextact_(0),
+     title_(title_text),
+     title_image_(title_image),
+     style_(&g_gr->styles().button_style(init_style)) {
+	set_thinks(false);
+	// Don't allow focus
+	assert(!get_can_focus());
 }
 
-
-Button::Button //  for pictorial buttons
-	(Panel * const parent,
-	 const std::string & name,
-	 const int32_t x, const int32_t y, const uint32_t w, const uint32_t h,
-	 PictureID background_picture_id,
-	 const PictureID foreground_picture_id,
-	 const std::string & tooltip_text,
-	 bool const _enabled, bool const flat)
-	:
-	NamedPanel      (parent, name, x, y, w, h, tooltip_text),
-	m_highlighted   (false),
-	m_pressed       (false),
-	m_permpressed   (false),
-	m_enabled       (_enabled),
-	m_repeating     (false),
-	m_flat          (flat),
-	m_draw_flat_background(false),
-	m_pic_background(background_picture_id),
-	m_pic_custom    (foreground_picture_id),
-	m_pic_custom_disabled(g_gr->create_grayed_out_pic(foreground_picture_id)),
-	m_font(UI::Font::ui_small()),
-	m_clr_down      (229, 161, 2),
-	m_draw_caret    (false)
-{
-	set_think(false);
-
-	if (m_pic_background && m_pic_background->valid())
-		set_cache(true);
+Button::Button  //  for textual buttons. If h = 0, h will resize according to the font's height.
+   (Panel* const parent,
+    const std::string& name,
+    int32_t const x,
+    int32_t const y,
+    uint32_t const w,
+    uint32_t const h,
+    UI::ButtonStyle init_style,
+    const std::string& title_text,
+    const std::string& tooltip_text,
+    UI::Button::VisualState init_state)
+   : Button(parent,
+            name,
+            x,
+            y,
+            w,
+            h,
+            init_style,
+            nullptr,
+            title_text,
+            tooltip_text,
+            init_state,
+            UI::Button::ImageMode::kShrink) {
+	// Automatically resize for font height and give it a margin.
+	if (h < 1) {
+		const int new_height =
+		   text_height(g_gr->styles().button_style(init_style).enabled().font()) + 4;
+		set_desired_size(w, new_height);
+		set_size(w, new_height);
+	}
 }
 
-
-Button::~Button()
-{
+Button::Button  //  for pictorial buttons
+   (Panel* const parent,
+    const std::string& name,
+    const int32_t x,
+    const int32_t y,
+    const uint32_t w,
+    const uint32_t h,
+    UI::ButtonStyle init_style,
+    const Image* title_image,
+    const std::string& tooltip_text,
+    UI::Button::VisualState init_state,
+    ImageMode mode)
+   : Button(parent, name, x, y, w, h, init_style, title_image, "", tooltip_text, init_state, mode) {
 }
 
+Button::~Button() {
+}
 
 /**
  * Sets a new picture for the Button.
-*/
-void Button::set_pic(PictureID const picid)
-{
-	m_title.clear();
+ */
+void Button::set_pic(const Image* pic) {
+	title_.clear();
 
-	if (m_pic_custom == picid)
+	if (title_image_ == pic)
 		return;
 
-	m_pic_custom = picid;
-	m_pic_custom_disabled = g_gr->create_grayed_out_pic(picid);
-
-	update();
+	title_image_ = pic;
 }
-
 
 /**
  * Set a text title for the Button
-*/
-void Button::set_title(std::string const & title) {
-	if (m_title == title)
+ */
+void Button::set_title(const std::string& title) {
+	if (title_ == title)
 		return;
 
-	m_pic_custom = g_gr->get_no_picture();
-	m_title      = title;
-
-	update();
+	title_image_ = nullptr;
+	title_ = title;
 }
-
 
 /**
  * Enable/Disable the button (disabled buttons can't be clicked).
  * Buttons are enabled by default
-*/
-void Button::set_enabled(bool const on)
-{
-	if (m_enabled == on)
+ */
+void Button::set_enabled(bool const on) {
+	if (enabled_ == on)
 		return;
 
 	// disabled buttons should look different...
 	if (on)
-		m_enabled = true;
+		enabled_ = true;
 	else {
-		if (m_pressed) {
-			m_pressed = false;
-			set_think(false);
+		if (pressed_) {
+			pressed_ = false;
+			set_thinks(false);
 			grab_mouse(false);
 		}
-		m_enabled = false;
-		m_highlighted = false;
+		enabled_ = false;
+		highlighted_ = false;
 	}
-	update();
 }
-
 
 /**
  * Redraw the button
-*/
-void Button::draw(RenderTarget & dst)
-{
+ */
+void Button::draw(RenderTarget& dst) {
+	const bool is_flat = (enabled_ && visual_state_ == VisualState::kFlat) ||
+	                     (!enabled_ && static_cast<int>(disable_style_ & ButtonDisableStyle::kFlat));
+	const bool is_permpressed =
+	   (enabled_ && visual_state_ == VisualState::kPermpressed) ||
+	   (!enabled_ && static_cast<int>(disable_style_ & ButtonDisableStyle::kPermpressed));
+	const bool is_monochrome =
+	   !enabled_ && static_cast<int>(disable_style_ & ButtonDisableStyle::kMonochrome);
+
+	const UI::TextPanelStyleInfo& style_to_use =
+	   is_monochrome ? style_->disabled() : style_->enabled();
+
 	// Draw the background
-	if (not m_flat or m_draw_flat_background) {
-		assert(m_pic_background != g_gr->get_no_picture());
-		dst.fill_rect(Rect(Point(0, 0), get_w(), get_h()), RGBAColor(0, 0, 0, 255));
-		dst.tile(Rect(Point(0, 0), get_w(), get_h()), m_pic_background, Point(get_x(), get_y()));
-	}
+	draw_background(dst, style_to_use.background());
 
-	if (m_enabled and m_highlighted and not m_flat)
-		dst.brighten_rect
-			(Rect(Point(0, 0), get_w(), get_h()), MOUSE_OVER_BRIGHT_FACTOR);
+	if (is_flat && highlighted_)
+		dst.brighten_rect(Recti(0, 0, get_w(), get_h()), MOUSE_OVER_BRIGHT_FACTOR);
 
-	//  if we got a picture, draw it centered
-	if (m_pic_custom != g_gr->get_no_picture()) {
-		uint32_t cpw, cph;
-		g_gr->get_picture_size(m_pic_custom, cpw, cph);
+	//  If we've got a picture, draw it centered
+	if (title_image_) {
+		if (image_mode_ == UI::Button::ImageMode::kUnscaled) {
+			if (!is_monochrome) {
+				dst.blit(Vector2i((get_w() - static_cast<int32_t>(title_image_->width())) / 2,
+				                  (get_h() - static_cast<int32_t>(title_image_->height())) / 2),
+				         title_image_);
+			} else {
+				dst.blit_monochrome(
+				   Vector2i((get_w() - static_cast<int32_t>(title_image_->width())) / 2,
+				            (get_h() - static_cast<int32_t>(title_image_->height())) / 2),
+				   title_image_, RGBAColor(255, 255, 255, 127));
+			}
+		} else {
+			const int max_image_w = get_w() - 2 * kButtonImageMargin;
+			const int max_image_h = get_h() - 2 * kButtonImageMargin;
+			const float image_scale =
+			   std::min(1.f, std::min(static_cast<float>(max_image_w) / title_image_->width(),
+			                          static_cast<float>(max_image_h) / title_image_->height()));
+			int blit_width = image_scale * title_image_->width();
+			int blit_height = image_scale * title_image_->height();
 
-		//  ">> 1" is almost like "/ 2", but simpler for signed types (difference
-		//  is that -1 >> 1 is -1 but -1 / 2 is 0).
-		dst.blit
-			(Point
-			 	((get_w() - static_cast<int32_t>(cpw)) >> 1,
-			 	 (get_h() - static_cast<int32_t>(cph)) >> 1),
-			 m_enabled ? m_pic_custom : m_pic_custom_disabled);
+			if (!is_monochrome) {
+				dst.blitrect_scale(Rectf((get_w() - blit_width) / 2.f, (get_h() - blit_height) / 2.f,
+				                         blit_width, blit_height),
+				                   title_image_,
+				                   Recti(0, 0, title_image_->width(), title_image_->height()), 1.,
+				                   BlendMode::UseAlpha);
+			} else {
+				dst.blitrect_scale_monochrome(
+				   Rectf((get_w() - blit_width) / 2.f, (get_h() - blit_height) / 2.f, blit_width,
+				         blit_height),
+				   title_image_, Recti(0, 0, title_image_->width(), title_image_->height()),
+				   RGBAColor(255, 255, 255, 127));
+			}
+		}
 
-	} else if (m_title.length()) {
-		//  otherwise draw title string centered
-		UI::TextStyle ts;
-		ts.font = m_font;
-		ts.bold = true;
-		ts.fg = m_enabled ? UI_FONT_CLR_FG : UI_FONT_CLR_DISABLED;
-		UI::g_fh->draw_text
-			(dst, ts, Point(get_w() / 2, get_h() / 2),
-			 m_title, Align_Center,
-			 m_draw_caret ? m_title.length() : std::numeric_limits<uint32_t>::max());
+	} else if (!title_.empty()) {
+		//  Otherwise draw title string centered
+		std::shared_ptr<const UI::RenderedText> rendered_text = autofit_text(
+		   richtext_escape(title_), style_to_use.font(), get_inner_w() - 2 * kButtonImageMargin);
+
+		// Blit on pixel boundary (not float), so that the text is blitted pixel perfect.
+		rendered_text->draw(dst, Vector2i((get_w() - rendered_text->width()) / 2,
+		                                  (get_h() - rendered_text->height()) / 2));
 	}
 
 	//  draw border
@@ -202,72 +232,59 @@ void Button::draw(RenderTarget & dst)
 	//  stays pressed when it is pressed once
 	RGBAColor black(0, 0, 0, 255);
 
-	// m_permpressed is true, we invert the behaviour on m_pressed
-	bool draw_pressed = m_permpressed ? not (m_pressed and m_highlighted)
-	                                  :     (m_pressed and m_highlighted);
-
-	if (not m_flat) {
+	if (!is_flat) {
 		assert(2 <= get_w());
 		assert(2 <= get_h());
-		//  button is a normal one, not flat
-		if (not draw_pressed) {
+		//  Button is a normal one, not flat. We invert the behaviour for kPermpressed.
+		if (is_permpressed == (pressed_ && highlighted_)) {
 			//  top edge
-			dst.brighten_rect
-				(Rect(Point(0, 0), get_w(), 2), BUTTON_EDGE_BRIGHT_FACTOR);
+			dst.brighten_rect(Recti(0, 0, get_w(), 2), BUTTON_EDGE_BRIGHT_FACTOR);
 			//  left edge
-			dst.brighten_rect
-				(Rect(Point(0, 2), 2, get_h() - 2), BUTTON_EDGE_BRIGHT_FACTOR);
+			dst.brighten_rect(Recti(0, 2, 2, get_h() - 2), BUTTON_EDGE_BRIGHT_FACTOR);
 			//  bottom edge
-			dst.fill_rect(Rect(Point(2, get_h() - 2), get_w() - 2, 1), black);
-			dst.fill_rect(Rect(Point(1, get_h() - 1), get_w() - 1, 1), black);
+			dst.fill_rect(Recti(2, get_h() - 2, get_w() - 2, 1), black);
+			dst.fill_rect(Recti(1, get_h() - 1, get_w() - 1, 1), black);
 			//  right edge
-			dst.fill_rect(Rect(Point(get_w() - 2, 2), 1, get_h() - 2), black);
-			dst.fill_rect(Rect(Point(get_w() - 1, 1), 1, get_h() - 1), black);
+			dst.fill_rect(Recti(get_w() - 2, 2, 1, get_h() - 2), black);
+			dst.fill_rect(Recti(get_w() - 1, 1, 1, get_h() - 1), black);
 		} else {
 			//  bottom edge
-			dst.brighten_rect
-				(Rect(Point(0, get_h() - 2), get_w(), 2),
-				 BUTTON_EDGE_BRIGHT_FACTOR);
+			dst.brighten_rect(Recti(0, get_h() - 2, get_w(), 2), BUTTON_EDGE_BRIGHT_FACTOR);
 			//  right edge
-			dst.brighten_rect
-				(Rect(Point(get_w() - 2, 0), 2, get_h() - 2),
-				 BUTTON_EDGE_BRIGHT_FACTOR);
+			dst.brighten_rect(Recti(get_w() - 2, 0, 2, get_h() - 2), BUTTON_EDGE_BRIGHT_FACTOR);
 			//  top edge
-			dst.fill_rect(Rect(Point(0, 0), get_w() - 1, 1), black);
-			dst.fill_rect(Rect(Point(0, 1), get_w() - 2, 1), black);
+			dst.fill_rect(Recti(0, 0, get_w() - 1, 1), black);
+			dst.fill_rect(Recti(0, 1, get_w() - 2, 1), black);
 			//  left edge
-			dst.fill_rect(Rect(Point(0, 0), 1, get_h() - 1), black);
-			dst.fill_rect(Rect(Point(1, 0), 1, get_h() - 2), black);
+			dst.fill_rect(Recti(0, 0, 1, get_h() - 1), black);
+			dst.fill_rect(Recti(1, 0, 1, get_h() - 2), black);
 		}
 	} else {
 		//  Button is flat, do not draw borders, instead, if it is pressed, draw
 		//  a box around it.
-		if (m_enabled and m_highlighted)
-		{
+		if (enabled_ && highlighted_) {
 			RGBAColor shade(100, 100, 100, 80);
-			dst.fill_rect(Rect(Point(0, 0), get_w(), 2), shade);
-			dst.fill_rect(Rect(Point(0, 2), 2, get_h() - 2), shade);
-			dst.fill_rect(Rect(Point(0, get_h() - 2), get_w(), get_h()), shade);
-			dst.fill_rect(Rect(Point(get_w() - 2, 0), get_w(), get_h()), shade);
-			//dst.draw_rect(Rect(Point(0, 0), get_w(), get_h()), m_clr_down);
+			dst.fill_rect(Recti(0, 0, get_w(), 2), shade);
+			dst.fill_rect(Recti(0, 2, 2, get_h() - 2), shade);
+			dst.fill_rect(Recti(0, get_h() - 2, get_w(), get_h()), shade);
+			dst.fill_rect(Recti(get_w() - 2, 0, get_w(), get_h()), shade);
 		}
 	}
 }
 
-void Button::think()
-{
-	assert(m_repeating);
-	assert(m_pressed);
+void Button::think() {
+	assert(repeating_);
+	assert(pressed_);
 	Panel::think();
 
-	if (m_highlighted) {
-		int32_t const time = WLApplication::get()->get_time();
-		if (m_time_nextact <= time) {
-			m_time_nextact += MOUSE_BUTTON_AUTOREPEAT_TICK; //  schedule next tick
-			if (m_time_nextact < time)
-				m_time_nextact = time;
+	if (highlighted_) {
+		uint32_t const time = SDL_GetTicks();
+		if (time_nextact_ <= time) {
+			time_nextact_ += MOUSE_BUTTON_AUTOREPEAT_TICK;  //  schedule next tick
+			if (time_nextact_ < time)
+				time_nextact_ = time;
 			play_click();
-			clicked();
+			sigclicked();
 			//  The button may not exist at this point (for example if the button
 			//  closed the dialog that it is part of). So member variables may no
 			//  longer be accessed.
@@ -277,76 +294,90 @@ void Button::think()
 
 /**
  * Update highlighted status
-*/
-void Button::handle_mousein(bool const inside)
-{
-	bool oldhl = m_highlighted;
+ */
+void Button::handle_mousein(bool const inside) {
+	bool oldhl = highlighted_;
 
-	m_highlighted = inside && m_enabled;
+	highlighted_ = inside && enabled_;
 
-	if (oldhl == m_highlighted)
+	if (oldhl == highlighted_)
 		return;
 
-	update();
+	if (highlighted_)
+		sigmousein();
+	else
+		sigmouseout();
 }
-
 
 /**
  * Update the pressed status of the button
-*/
-bool Button::handle_mousepress(Uint8 const btn, int32_t, int32_t) {
+ */
+bool Button::handle_mousepress(uint8_t const btn, int32_t, int32_t) {
 	if (btn != SDL_BUTTON_LEFT)
 		return false;
 
-	if (m_enabled) {
+	if (enabled_) {
 		grab_mouse(true);
-		m_pressed = true;
-		if (m_repeating) {
-			m_time_nextact =
-				WLApplication::get()->get_time() + MOUSE_BUTTON_AUTOREPEAT_DELAY;
-			set_think(true);
+		pressed_ = true;
+		if (repeating_) {
+			time_nextact_ = SDL_GetTicks() + MOUSE_BUTTON_AUTOREPEAT_DELAY;
+			set_thinks(true);
 		}
 	}
-	update();
-
 	return true;
 }
-bool Button::handle_mouserelease(Uint8 const btn, int32_t, int32_t) {
+
+bool Button::handle_mouserelease(uint8_t const btn, int32_t, int32_t) {
 	if (btn != SDL_BUTTON_LEFT)
 		return false;
 
-	set_think(false);
-	if (m_pressed) {
-		m_pressed = false;
+	if (pressed_) {
+		pressed_ = false;
+		set_thinks(false);
 		grab_mouse(false);
-		update();
-		if (m_highlighted && m_enabled) {
+		if (highlighted_ && enabled_) {
 			play_click();
-			clicked();
+			sigclicked();
 			//  The button may not exist at this point (for example if the button
 			//  closed the dialog that it is part of). So member variables may no
 			//  longer be accessed.
 		}
+		return true;
 	}
-	return true;
-}
-bool Button::handle_mousemove(const Uint8, int32_t, int32_t, int32_t, int32_t) {
-	return true; // We handle this always by lighting up
+	return false;
 }
 
-void Button::set_perm_pressed(bool state) {
-	if (state != m_permpressed) {
-		m_permpressed = state;
-		update();
+bool Button::handle_mousemove(const uint8_t, int32_t, int32_t, int32_t, int32_t) {
+	return true;  // We handle this always by lighting up
+}
+
+void Button::set_visual_state(UI::Button::VisualState input_state) {
+	visual_state_ = input_state;
+}
+
+void Button::set_disable_style(UI::ButtonDisableStyle input_style) {
+	disable_style_ = input_style;
+}
+
+void Button::set_perm_pressed(bool pressed) {
+	set_visual_state(pressed ? UI::Button::VisualState::kPermpressed :
+	                           UI::Button::VisualState::kRaised);
+}
+
+void Button::set_style(UI::ButtonStyle bstyle) {
+	style_ = &g_gr->styles().button_style(bstyle);
+}
+
+void Button::toggle() {
+	switch (visual_state_) {
+	case UI::Button::VisualState::kRaised:
+		visual_state_ = UI::Button::VisualState::kPermpressed;
+		break;
+	case UI::Button::VisualState::kPermpressed:
+		visual_state_ = UI::Button::VisualState::kRaised;
+		break;
+	case UI::Button::VisualState::kFlat:
+		break;  // Do nothing for flat buttons
 	}
 }
-
-void Button::set_flat(bool flat) {
-	m_flat = flat;
-}
-
-void Button::set_draw_flat_background(bool set) {
-	m_draw_flat_background = set;
-}
-
-}
+}  // namespace UI

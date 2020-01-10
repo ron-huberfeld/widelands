@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006-2009 by the Widelands Development Team
+ * Copyright (C) 2003-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,18 +13,19 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#ifndef UI_ICONGRID_H
-#define UI_ICONGRID_H
-
-#include "panel.h"
-#include "textarea.h"
-#include "m_signal.h"
+#ifndef WL_UI_BASIC_ICONGRID_H
+#define WL_UI_BASIC_ICONGRID_H
 
 #include <vector>
+
+#include <boost/signals2.hpp>
+
+#include "ui_basic/panel.h"
+#include "ui_basic/textarea.h"
 
 namespace UI {
 
@@ -33,40 +34,32 @@ namespace UI {
  *
  * Arrangement is horizontal (pictures fill the grid from left to right, top to
  * bottom).
-*/
-struct Icon_Grid : public Panel {
-	Icon_Grid
-		(Panel  * parent,
-		 int32_t x, int32_t y, int32_t cellw, int32_t cellh,
-		 int32_t  cols);
+ */
+struct IconGrid : public Panel {
+	IconGrid(Panel* parent, int32_t x, int32_t y, int32_t cellw, int32_t cellh, int32_t cols);
 
-	Signal1<int32_t> clicked;
-	Signal1<int32_t> mouseout;
-	Signal1<int32_t> mousein;
+	boost::signals2::signal<void(int32_t)> icon_clicked;
+	boost::signals2::signal<void(int32_t)> mouseout;
+	boost::signals2::signal<void(int32_t)> mousein;
 
-	int32_t add
-		(std::string const & name,
-		 PictureID           picid,
-		 void              * data,
-		 std::string const & descr = std::string());
-	void * get_data(int32_t idx);
+	int32_t
+	add(const std::string& name, const Image* pic, void* data, const std::string& tooltip_text = "");
+	void* get_data(int32_t idx);
 
 private:
 	void clicked_button(uint32_t);
 
 	struct Item {
-		void      * data;
+		void* data;
 	};
 
 	/// max # of columns (or rows, depending on orientation) in the grid
-	int32_t m_columns;
-	int32_t m_cell_width; ///< size of one cell
-	int32_t m_cell_height;
+	int32_t columns_;
+	int32_t cell_width_;  ///< size of one cell
+	int32_t cell_height_;
 
-	Textarea          m_ta;
-	std::vector<Item> m_items;
+	std::vector<Item> items_;
 };
+}  // namespace UI
 
-}
-
-#endif
+#endif  // end of include guard: WL_UI_BASIC_ICONGRID_H

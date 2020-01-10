@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2002-2004, 2007-2009 by the Widelands Development Team
+ * Copyright (C) 2002-2019 by the Widelands Development Team
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -13,66 +13,106 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  */
 
-#include "game_saver.h"
+#include "game_io/game_saver.h"
 
+#include "base/log.h"
+#include "base/scoped_timer.h"
+#include "game_io/game_class_packet.h"
+#include "game_io/game_cmd_queue_packet.h"
+#include "game_io/game_interactive_player_packet.h"
+#include "game_io/game_map_packet.h"
+#include "game_io/game_player_ai_persistent_packet.h"
+#include "game_io/game_player_economies_packet.h"
+#include "game_io/game_player_info_packet.h"
+#include "game_io/game_preload_packet.h"
 #include "io/filesystem/filesystem.h"
 #include "logic/game.h"
-#include "game_cmd_queue_data_packet.h"
-#include "game_game_class_data_packet.h"
-#include "game_map_data_packet.h"
-#include "game_preload_data_packet.h"
-#include "game_interactive_player_data_packet.h"
-#include "game_player_economies_data_packet.h"
-#include "game_player_info_data_packet.h"
-
-#include "log.h"
+#include "ui_basic/progresswindow.h"
 
 namespace Widelands {
 
-Game_Saver::Game_Saver(FileSystem & fs, Game & game) : m_fs(fs), m_game(game) {
+GameSaver::GameSaver(FileSystem& fs, Game& game) : fs_(fs), game_(game) {
 }
-
 
 /*
  * The core save function
  */
-void Game_Saver::save() {
+void GameSaver::save() {
+	ScopedTimer timer("GameSaver::save() took %ums");
 
-	m_fs.EnsureDirectoryExists("binary");
+	assert(game_.get_loader_ui());
+	auto set_progress_message = [this](std::string text, int step) {
+		game_.get_loader_ui()->step(
+		   step < 0 ? text :
+		              (boost::format(_("Saving game: %1$s (%2$d/%3$d)")) % text % step % 5).str());
+	};
+	set_progress_message(_("Autosaving game…"), -1);
+
+	fs_.ensure_directory_exists("binary");
 
 	log("Game: Writing Preload Data ... ");
-	{Game_Preload_Data_Packet                    p; p.Write(m_fs, m_game, 0);}
-	log(" done\n");
+	set_progress_message(_("Elemental data"), 1);
+	{
+		GamePreloadPacket p;
+		p.write(fs_, game_, nullptr);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 
 	log("Game: Writing Game Class Data ... ");
-	{Game_Game_Class_Data_Packet                 p; p.Write(m_fs, m_game, 0);}
-	log(" done\n");
+	{
+		GameClassPacket p;
+		p.write(fs_, game_, nullptr);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 
 	log("Game: Writing Player Info ... ");
-	{Game_Player_Info_Data_Packet                p; p.Write(m_fs, m_game, 0);}
-	log(" done\n");
+	{
+		GamePlayerInfoPacket p;
+		p.write(fs_, game_, nullptr);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 
 	log("Game: Writing Map Data!\n");
-	Game_Map_Data_Packet                         M; M.Write(m_fs, m_game, 0);
-	log("Game: Writing Map Data done!\n");
+	GameMapPacket M;
+	M.write(fs_, game_, nullptr);
+	log("Game: Writing Map Data took %ums\n", timer.ms_since_last_query());
 
-	Map_Map_Object_Saver * const mos = M.get_map_object_saver();
+	MapObjectSaver* const mos = M.get_map_object_saver();
 
 	log("Game: Writing Player Economies Info ... ");
-	{Game_Player_Economies_Data_Packet           p; p.Write(m_fs, m_game, mos);}
-	log(" done\n");
+	set_progress_message(_("Economies"), 2);
+	{
+		GamePlayerEconomiesPacket p;
+		p.write(fs_, game_, mos);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
+
+	log("Game: Writing ai persistent data ... ");
+	set_progress_message(_("AI"), 3);
+	{
+		GamePlayerAiPersistentPacket p;
+		p.write(fs_, game_, mos);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 
 	log("Game: Writing Command Queue Data ... ");
-	{Game_Cmd_Queue_Data_Packet                  p; p.Write(m_fs, m_game, mos);}
-	log(" done\n");
+	set_progress_message(_("Command queue"), 4);
+	{
+		GameCmdQueuePacket p;
+		p.write(fs_, game_, mos);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 
 	log("Game: Writing Interactive Player Data ... ");
-	{Game_Interactive_Player_Data_Packet         p; p.Write(m_fs, m_game, mos);}
-	log(" done\n");
+	set_progress_message(_("Interactive player"), 5);
+	{
+		GameInteractivePlayerPacket p;
+		p.write(fs_, game_, mos);
+	}
+	log("took %ums\n", timer.ms_since_last_query());
 }
-
-}
+}  // namespace Widelands
